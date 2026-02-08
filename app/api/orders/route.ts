@@ -40,6 +40,7 @@ export async function POST(request: Request) {
         // Columns: id, market_name, email, items, totalPrice, currency, orderDate
         const orderRow = [
             id,
+            JSON.stringify(items),
             customerName,
             customerEmail,
             itemsSummary,

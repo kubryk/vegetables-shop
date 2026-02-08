@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { appendOrderToSheet } from '@/lib/google-sheets';
+import { db } from '@/lib/db';
+import { orders as ordersTable } from '@/lib/db/schema';
 
 export async function POST(request: Request) {
     try {
@@ -17,45 +19,58 @@ export async function POST(request: Request) {
 
         console.log('Parsed order data:', { customerName, customerEmail, itemCount: items?.length, totalPrice });
 
-        const sheetId = process.env.GOOGLE_SHEET_ORDERS_ID;
-        const sheetName = process.env.GOOGLE_SHEET_ORDERS_NAME || 'Замовлення';
-
-        if (!sheetId) {
-            console.error('GOOGLE_SHEET_ORDERS_ID is missing');
-            return NextResponse.json(
-                { error: 'GOOGLE_SHEET_ORDERS_ID is not set' },
-                { status: 500 }
-            );
-        }
-
-        // Format items for the sheet
+        // Format items for summary
         const itemsSummary = items
             .map((item: any) => `${item.name} (${item.quantity} шт.)`)
             .join('\n');
 
-        // Generate ID
-        const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+        // 1. Save to Database
+        let dbOrderId = null;
+        try {
+            const [newOrder] = await db.insert(ordersTable).values({
+                customerName,
+                customerEmail,
+                items,
+                itemsSummary,
+                totalPrice: parseFloat(totalPrice.toString()),
+                currency,
+                status: 'processing',
+                orderDate: new Date(orderDate),
+            }).returning();
+            dbOrderId = newOrder.id;
+            console.log('Order saved to DB with ID:', dbOrderId);
+        } catch (dbError) {
+            console.error('Failed to save order to DB:', dbError);
+            // We continue to sheets even if DB fails for redundancy, 
+            // but in a production app we might want to handle this differently
+        }
 
-        // Prepare row data
-        // Columns: id, market_name, email, items, totalPrice, currency, orderDate
-        const orderRow = [
-            id,
-            JSON.stringify(items),
-            customerName,
-            customerEmail,
-            itemsSummary,
-            totalPrice.toString(),
-            currency,
-            new Date(orderDate).toLocaleString('uk-UA'),
-            'processing',
-        ];
+        // 2. Save to Google Sheets
+        const sheetId = process.env.GOOGLE_SHEET_ORDERS_ID;
+        const sheetName = process.env.GOOGLE_SHEET_ORDERS_NAME || 'Замовлення';
 
-        console.log('Appending row to sheet:', { sheetId, sheetName, orderRow });
+        if (sheetId) {
+            const orderRow = [
+                dbOrderId || Date.now().toString(36),
+                JSON.stringify(items),
+                customerName,
+                customerEmail,
+                itemsSummary,
+                totalPrice.toString(),
+                currency,
+                new Date(orderDate).toLocaleString('uk-UA'),
+                'processing',
+            ];
 
-        await appendOrderToSheet(sheetId, sheetName, [orderRow]);
+            await appendOrderToSheet(sheetId, sheetName, [orderRow]).catch(err => {
+                console.error('Failed to sync to Google Sheets:', err);
+            });
+        }
 
-        console.log('Order created successfully, ID:', id);
-        return NextResponse.json({ success: true, id });
+        return NextResponse.json({
+            success: true,
+            id: dbOrderId || 'temp-' + Date.now().toString(36)
+        });
     } catch (error) {
         console.error('Error creating order:', error);
         return NextResponse.json(

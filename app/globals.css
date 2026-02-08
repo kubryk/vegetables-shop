@@ -1,26 +1,126 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Tailwind v4: make `dark:` variant use `.dark` class (not only prefers-color-scheme) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-background: hsl(0 0% 100%);
+  --color-foreground: hsl(142 20% 15%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(142 20% 15%);
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(142 20% 15%);
+  --color-primary: hsl(142 76% 36%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(142 30% 96%);
+  --color-secondary-foreground: hsl(142 50% 20%);
+  --color-muted: hsl(142 20% 96%);
+  --color-muted-foreground: hsl(142 10% 45%);
+  --color-accent: hsl(142 40% 94%);
+  --color-accent-foreground: hsl(142 50% 20%);
+  --color-destructive: hsl(0 84.2% 60.2%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-border: hsl(142 20% 90%);
+  --color-input: hsl(142 20% 90%);
+  --color-ring: hsl(142 76% 36%);
+  --radius-lg: 0.75rem;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: 0 0% 100%;
+    --foreground: 142 20% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 142 20% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 142 20% 15%;
+    --primary: 142 76% 36%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 142 30% 96%;
+    --secondary-foreground: 142 50% 20%;
+    --muted: 142 20% 96%;
+    --muted-foreground: 142 10% 45%;
+    --accent: 142 40% 94%;
+    --accent-foreground: 142 50% 20%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 142 20% 90%;
+    --input: 142 20% 90%;
+    --ring: 142 76% 36%;
+    --radius: 0.75rem;
+    --gradient-green: linear-gradient(135deg, hsl(142 76% 36%) 0%, hsl(142 70% 45%) 100%);
+    --gradient-green-light: linear-gradient(135deg, hsl(142 30% 96%) 0%, hsl(142 20% 98%) 100%);
+  }
+
+  .dark {
+    /* Neutral dark palette (no blue/green tint) */
+    --background: 0 0% 6%;
+    --foreground: 0 0% 92%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 92%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 92%;
+    --primary: 142 70% 50%;
+    --primary-foreground: 142 20% 8%;
+    --secondary: 0 0% 14%;
+    --secondary-foreground: 0 0% 92%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 70%;
+    --accent: 0 0% 16%;
+    --accent-foreground: 0 0% 92%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 92%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 142 70% 50%;
+    --gradient-green: linear-gradient(135deg, hsl(142 70% 50%) 0%, hsl(142 55% 45%) 100%);
+    --gradient-green-light: linear-gradient(135deg, hsl(0 0% 12%) 0%, hsl(0 0% 8%) 100%);
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+  
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+    color-scheme: light dark;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  /* Back-compat for existing classNames in components */
+  .bg-gradient-green {
+    background: var(--gradient-green);
+  }
+  
+  .bg-gradient-green-light {
+    background: var(--gradient-green-light);
+  }
+  
+  .gradient-green {
+    background: var(--gradient-green);
+  }
+  
+  .gradient-green-light {
+    background: var(--gradient-green-light);
+  }
+  
+  .shadow-green {
+    box-shadow: 0 4px 14px 0 rgba(34, 197, 94, 0.15);
+  }
+  
+  .shadow-green-lg {
+    box-shadow: 0 10px 40px 0 rgba(34, 197, 94, 0.2);
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
+  }
 }

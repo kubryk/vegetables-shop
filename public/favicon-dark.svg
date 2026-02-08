@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <!-- Green round background for dark theme tabs -->
+  <circle cx="32" cy="32" r="28" fill="#16A34A"/>
+  <path
+    d="M42.8 20.6c-8.2.4-15.6 4.8-19.6 11.6-3.2 5.6-3.6 12.2-1.2 17.2.2.4.8.5 1.1.1 2.9-3.6 8.9-5.1 14.2-7 9.6-3.4 15.6-9.4 15.3-18.4 0-.6-.5-1.1-1.1-1.1h-8.7Z"
+    fill="#FFFFFF"
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+  />
+  <path
+    d="M24.3 44.6c6.1-7.2 12.8-12.2 20.7-15.3"
+    stroke="#0B3D1E"
+    stroke-opacity="0.35"
+    stroke-width="2.6"
+    stroke-linecap="round"
+  />
+</svg>
+

@@ -1,36 +1,133 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Магазин овочів
 
-## Getting Started
+Магазин овочів та фруктів з інтеграцією Google Sheets для управління каталогом товарів.
 
-First, run the development server:
+## Особливості
+
+- 📦 Відображення товарів з Google Sheets
+- 🛒 Кошик для замовлень
+- 📝 Форма замовлення з контактними даними
+- 💾 Автоматичне збереження замовлень в Google Sheets
+- 🎨 Сучасний UI з TailwindCSS
+- 📱 Адаптивний дизайн
+- 🔍 Фільтрація по категоріям
+- ⚡ Швидке завантаження з Next.js
+
+## Налаштування
+
+### 1. Створіть Google Таблицю
+
+Створіть Google Таблицю з наступною структурою:
+
+| Назва | Опис | Ціна | Зображення | Категорія | Доступність |
+|-------|------|------|------------|-----------|-------------|
+| Помидор | Свіжі помідори | 50.00 | https://example.com/tomato.jpg | Овочі | Так |
+| Яблуко | Зелені яблука | 30.00 | https://example.com/apple.jpg | Фрукти | Так |
+
+**Важливо:** Для публічної таблиці зробіть її доступною для всіх (File → Share → Anyone with the link).
+
+### 2. Налаштуйте змінні оточення
+
+Скопіюйте `.env.example` в `.env.local`:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Відредагуйте `.env.local`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```env
+# ID таблиці можна знайти в URL:
+# https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/edit
+GOOGLE_SHEET_ID=your_sheet_id_here
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Назва листа в таблиці (за замовчуванням "Sheet1")
+GOOGLE_SHEET_NAME=Sheet1
 
-## Learn More
+# Опціонально: API ключ Google Sheets (якщо таблиця приватна)
+GOOGLE_SHEETS_API_KEY=
 
-To learn more about Next.js, take a look at the following resources:
+# ID таблиці для замовлень (інша таблиця)
+GOOGLE_ORDER_SHEET_ID=your_order_sheet_id_here
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Назва листа в таблиці замовлень
+GOOGLE_ORDER_SHEET_NAME=Замовлення
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 3. Встановіть залежності та запустіть
 
-## Deploy on Vercel
+```bash
+npm install
+npm run dev
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Відкрийте [http://localhost:3000](http://localhost:3000) у браузері.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 4. Налаштування автентифікації для запису замовлень
+
+Для запису замовлень в Google Sheets потрібна автентифікація. API ключ працює тільки для читання.
+
+**Варіант 1: Service Account (рекомендовано для продакшену)**
+
+1. Створіть Service Account в [Google Cloud Console](https://console.cloud.google.com/)
+2. Створіть ключ JSON для Service Account
+3. Додайте email Service Account як редактора до таблиці замовлень
+4. Додайте JSON ключ в `.env` як `GOOGLE_SERVICE_ACCOUNT_KEY` (base64 або шлях до файлу)
+
+**Варіант 2: OAuth 2.0**
+
+Налаштуйте OAuth 2.0 в Google Cloud Console та додайте токен до `.env`.
+
+**Варіант 3: Публічна таблиця з редагуванням**
+
+Якщо таблиця налаштована як "Anyone with the link can edit", можна спробувати використати API ключ, але це зазвичай не працює через обмеження Google Sheets API.
+
+**Примітка:** Поточна реалізація використовує API ключ для запису. Якщо виникне помилка автентифікації, налаштуйте Service Account або OAuth 2.0.
+
+## Структура Google Таблиці
+
+Таблиця повинна мати заголовки в першому рядку. Підтримуються такі назви колонок:
+
+- **Назва товару:** "Назва", "Name"
+- **Опис:** "Опис", "Description", "Desc"
+- **Ціна:** "Ціна", "Price"
+- **Зображення:** "Зображення", "Image", "Фото"
+- **Категорія:** "Категорія", "Category"
+- **Доступність:** "Доступність", "Available", "В наявності" (значення: "Так"/"Yes"/"True"/"1" або "Ні"/"No"/"False"/"0")
+
+## Структура таблиці замовлень
+
+Таблиця замовлень автоматично створює записи з наступними колонками:
+
+| Дата замовлення | Ім'я | Телефон | Email | Адреса | Товари | Кількість товарів | Загальна сума | Примітки |
+|----------------|------|---------|-------|--------|--------|-------------------|---------------|----------|
+
+## Технології
+
+- Next.js 16
+- React 19
+- TypeScript
+- TailwindCSS 4
+
+## Структура проєкту
+
+```
+├── app/
+│   ├── api/
+│   │   ├── products/
+│   │   │   └── route.ts      # API endpoint для завантаження товарів
+│   │   └── orders/
+│   │       └── route.ts      # API endpoint для створення замовлень
+│   ├── page.tsx               # Головна сторінка магазину
+│   └── layout.tsx
+├── components/
+│   ├── ProductCard.tsx        # Компонент картки товару
+│   └── Cart.tsx               # Компонент кошика та форми замовлення
+├── contexts/
+│   └── CartContext.tsx        # Контекст для управління кошиком
+├── lib/
+│   └── google-sheets.ts       # Утиліти для роботи з Google Sheets
+└── types/
+    ├── product.ts             # TypeScript типи для товарів
+    └── order.ts               # TypeScript типи для замовлень
+```

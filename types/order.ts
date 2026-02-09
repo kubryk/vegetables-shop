@@ -7,6 +7,7 @@ export type CartItem = {
   image: string;
   unit: string;
   cardboardWeight: number;
+  agregationResult?: string;
 };
 
 export type Order = {

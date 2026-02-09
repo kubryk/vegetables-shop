@@ -9,4 +9,5 @@ export type Product = {
   active: boolean; // чи активний товар
   currency: string; // напр. EUR, UAH
   image: string;
+  agregationResult?: string;
 };

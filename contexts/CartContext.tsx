@@ -49,6 +49,7 @@ const loadCartFromStorage = (): CartItem[] => {
               : '',
             unit: String(raw.unit || 'кг'),
             cardboardWeight: Number(raw.cardboardWeight || 0),
+            agregationResult: raw.agregationResult,
           } satisfies CartItem;
         })
         .filter((x) => x.productId && x.quantity > 0);
@@ -105,7 +106,8 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
               quantity: item.quantity + quantity,
               image: product.image || item.image || '',
               unit: product.unit || item.unit,
-              cardboardWeight: product.cardboardWeight || item.cardboardWeight
+              cardboardWeight: product.cardboardWeight || item.cardboardWeight,
+              agregationResult: product.agregationResult || item.agregationResult
             }
             : item
         );
@@ -122,6 +124,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
           image: product.image || '',
           unit: product.unit || 'кг',
           cardboardWeight: product.cardboardWeight || 0,
+          agregationResult: product.agregationResult,
         },
       ];
     });

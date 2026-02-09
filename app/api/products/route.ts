@@ -57,6 +57,7 @@ export async function GET() {
                 pricePerCardboard: parsePrice(rowData['price_per_cardboard']),
                 currency: rowData['currency'] || 'EUR',
                 image: rowData['image'] || '',
+                agregationResult: rowData['agregation_result'] || '',
                 active: (rowData['active'] || '').toLowerCase() === 'true',
             };
         }).filter(p => p.active); // Показуємо тільки активні товари

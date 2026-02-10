@@ -1,0 +1,1 @@
+ALTER TABLE "products" ALTER COLUMN "agregation_result" SET DATA TYPE text;

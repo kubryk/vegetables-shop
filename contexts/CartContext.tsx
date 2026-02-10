@@ -47,8 +47,11 @@ const loadCartFromStorage = (): CartItem[] => {
             image: typeof raw.image === 'string' && raw.image.trim()
               ? raw.image.trim()
               : '',
+            category: String(raw.category || 'Інше'),
             unit: String(raw.unit || 'кг'),
-            cardboardWeight: Number(raw.cardboardWeight || 0),
+            netWeight: Number(raw.netWeight || (raw as any).cardboardWeight || 0),
+            unitPerCardboard: Number(raw.unitPerCardboard || 0),
+            pricePerUnit: Number(raw.pricePerUnit || 0),
           } satisfies CartItem;
         })
         .filter((x) => x.productId && x.quantity > 0);
@@ -104,8 +107,11 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
               ...item,
               quantity: item.quantity + quantity,
               image: product.image || item.image || '',
+              category: product.category || item.category || 'Інше',
               unit: product.unit || item.unit,
-              cardboardWeight: product.cardboardWeight || item.cardboardWeight
+              netWeight: product.netWeight || item.netWeight,
+              unitPerCardboard: product.unitPerCardboard || item.unitPerCardboard,
+              pricePerUnit: product.pricePerUnit || item.pricePerUnit,
             }
             : item
         );
@@ -116,12 +122,15 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         {
           productId: product.id,
           name: product.name,
-          price: product.pricePerCardboard,
+          category: product.category || 'Інше',
+          price: product.pricePerCardboard || 0,
           quantity,
           currency: (product.currency || DEFAULT_CURRENCY).toUpperCase(),
           image: product.image || '',
           unit: product.unit || 'кг',
-          cardboardWeight: product.cardboardWeight || 0,
+          netWeight: product.netWeight || 0,
+          unitPerCardboard: product.unitPerCardboard || 0,
+          pricePerUnit: product.pricePerUnit || 0,
         },
       ];
     });

@@ -26,6 +26,8 @@ export const metadata: Metadata = {
   },
 };
 
+import { Toaster } from "sonner";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -39,6 +41,7 @@ export default function RootLayout({
         <ThemeInitScript />
         <CartProvider>
           {children}
+          <Toaster position="top-right" richColors duration={10000} />
         </CartProvider>
       </body>
     </html>

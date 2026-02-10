@@ -92,7 +92,10 @@ const Cart = () => {
         customerPhone: '',
         customerEmail: formData.customerEmail.trim(),
         customerAddress: undefined,
-        items: items,
+        items: currentItems.map(item => ({
+          ...item,
+          totalPrice: item.price * item.quantity
+        })),
         totalPrice: currentTotal,
         currency,
         orderDate: new Date().toISOString(),
@@ -181,7 +184,7 @@ const Cart = () => {
                     {lastOrder.items.map((item, idx) => (
                       <li key={idx} className="flex justify-between">
                         <span className="text-gray-900 dark:text-gray-200 truncate pr-2 flex-1">
-                          {item.name} <span className="text-gray-400 whitespace-nowrap">× {item.quantity} {item.cardboardWeight > 0 ? `(${new Intl.NumberFormat('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(item.cardboardWeight * item.quantity)} ${item.unit})` : ''}</span>
+                          {item.name} <span className="text-gray-400 whitespace-nowrap">× {item.quantity} {item.netWeight > 0 ? `(${new Intl.NumberFormat('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(item.netWeight * item.quantity)} ${item.unit})` : item.unit === 'pcs' && item.unitPerCardboard > 0 ? `(${item.unitPerCardboard * item.quantity} шт)` : ''}</span>
                         </span>
                         <span className="font-semibold whitespace-nowrap">{new Intl.NumberFormat('de-DE', { style: 'currency', currency: lastOrder.currency }).format(item.price * item.quantity)}</span>
                       </li>
@@ -279,13 +282,22 @@ const Cart = () => {
                                 </Button>
                               </div>
                               <div className="mt-1 flex flex-col gap-0.5">
-                                {item.cardboardWeight > 0 ? (
+                                {item.netWeight > 0 ? (
                                   <>
                                     <p className="text-sm font-bold text-[hsl(142_76%_36%)] dark:text-green-400">
-                                      {new Intl.NumberFormat('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(item.cardboardWeight * item.quantity)} {item.unit}
+                                      {new Intl.NumberFormat('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(item.netWeight * item.quantity)} {item.unit}
                                     </p>
                                     <p className="text-xs font-medium text-gray-500 dark:text-zinc-400">
-                                      {formattedPrice.format(item.price)} / {new Intl.NumberFormat('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(item.cardboardWeight)} {item.unit}
+                                      {formattedPrice.format(item.price)} / {new Intl.NumberFormat('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(item.netWeight)} {item.unit}
+                                    </p>
+                                  </>
+                                ) : item.unit === 'pcs' && item.unitPerCardboard > 0 ? (
+                                  <>
+                                    <p className="text-sm font-bold text-[hsl(142_76%_36%)] dark:text-green-400">
+                                      {item.unitPerCardboard * item.quantity} шт
+                                    </p>
+                                    <p className="text-xs font-medium text-gray-500 dark:text-zinc-400">
+                                      {formattedPrice.format(item.price)} / {item.unitPerCardboard} шт
                                     </p>
                                   </>
                                 ) : (

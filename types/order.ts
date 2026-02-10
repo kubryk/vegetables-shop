@@ -1,12 +1,15 @@
 export type CartItem = {
   productId: string;
   name: string;
-  price: number;
+  category: string;
+  price: number; // This is price per package
+  pricePerUnit: number;
   quantity: number;
   currency: string;
   image: string;
   unit: string;
-  cardboardWeight: number;
+  netWeight: number;
+  unitPerCardboard: number;
 };
 
 export type Order = {

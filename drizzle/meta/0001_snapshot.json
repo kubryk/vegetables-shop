@@ -1,6 +1,6 @@
 {
-  "id": "0938e461-ad28-4b42-8ddd-27e84fb04f96",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "47e90371-01de-4815-b172-1387439ca46f",
+  "prevId": "0938e461-ad28-4b42-8ddd-27e84fb04f96",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -149,7 +149,7 @@
         },
         "agregation_result": {
           "name": "agregation_result",
-          "type": "real",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

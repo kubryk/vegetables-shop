@@ -95,7 +95,7 @@ export default function AggregationPage() {
                     productSet.add(productName);
 
                     const qty = item.quantity || 0;
-                    const cweight = item.cardboardWeight || 0;
+                    const cweight = item.netWeight || item.cardboardWeight || 0;
                     const itemTotalWeight = qty * cweight;
                     const unit = item.unit || productInfoMap[productName] || 'kg';
 
@@ -148,7 +148,7 @@ export default function AggregationPage() {
                         };
                     }
                     productsMap[key].totalPacks += (item.quantity || 0);
-                    productsMap[key].totalRevenue += (item.totalPrice || ((item.price || 0) * (item.quantity || 0)));
+                    productsMap[key].totalRevenue += (item.totalPrice || ((item.pricePerUnit || item.price || 0) * (item.quantity || 0)));
                 });
             });
             setAggregatedData(Object.values(productsMap));

@@ -95,3 +95,51 @@ export const appendOrderToSheet = async (
     throw new Error('Failed to append to Google Sheet');
   }
 };
+// Функція для повного оновлення листа (видалення старих даних і запис нових)
+export const replaceSheetContent = async (
+  sheetId: string,
+  range: string,
+  data: any[][]
+): Promise<void> => {
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n').replace(/^"|"$/g, ''),
+      },
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    });
+
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    // Extract sheet name and ensure it's quoted for the API
+    const sheetName = range.split('!')[0].replace(/^'|'$/g, '');
+    const safeSheetName = `'${sheetName.replace(/'/g, "''")}'`;
+
+    // 1. Clear a large range to ensure old data is completely removed
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: sheetId,
+      range: `${safeSheetName}!A1:Z1000`,
+    });
+
+    // 2. Update starting from A1
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: `${safeSheetName}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: data,
+      },
+    });
+
+    console.log(`Successfully updated Google Sheet: ${sheetName}, rows: ${data.length}`);
+  } catch (error: any) {
+    console.error('Google Sheets Replace Error:', error);
+    const message = error.response?.data?.error?.message || error.message;
+    const sheetPart = range.split('!')[0].replace(/^'|'$/g, '');
+    if (message.includes('Unable to parse range')) {
+      throw new Error(`Лист із назвою "${sheetPart}" не знайдено. Будь ласка, переконайтеся, що лист з такою назвою існує в Google Таблиці.`);
+    }
+    throw new Error(`Помилка Google Sheets: ${message}`);
+  }
+};

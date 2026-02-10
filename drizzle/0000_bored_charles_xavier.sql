@@ -14,15 +14,16 @@ CREATE TABLE "orders" (
 CREATE TABLE "products" (
 	"id" text PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
-	"description" text,
 	"category" text NOT NULL,
-	"price" real NOT NULL,
-	"currency" text DEFAULT 'UAH',
 	"unit" text DEFAULT 'kg',
-	"image" text,
-	"active" boolean DEFAULT true,
-	"cardboard_weight" real,
+	"unit_per_cardboard" real,
+	"net_weight" real,
+	"price_per_unit" real NOT NULL,
 	"price_per_cardboard" real,
+	"currency" text DEFAULT 'UAH',
+	"image" text,
+	"agregation_result" real,
+	"active" boolean DEFAULT true,
 	"created_at" timestamp DEFAULT now(),
 	"updated_at" timestamp DEFAULT now()
 );

@@ -13,12 +13,14 @@ export async function GET() {
             id: p.id,
             name: p.name,
             category: p.category,
-            cardboardWeight: p.cardboardWeight,
-            pricePerUnit: p.price,
             unit: p.unit,
+            unitPerCardboard: p.unitPerCardboard,
+            netWeight: p.netWeight,
+            pricePerUnit: p.pricePerUnit,
             pricePerCardboard: p.pricePerCardboard,
             currency: p.currency,
             image: p.image,
+            agregationResult: p.agregationResult,
             active: p.active,
         }));
 

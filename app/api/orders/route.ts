@@ -21,7 +21,16 @@ export async function POST(request: Request) {
 
         // Format items for summary
         const itemsSummary = items
-            .map((item: any) => `${item.name} (${item.quantity} шт.)`)
+            .map((item: any) => {
+                const inPack = Number(item.netWeight || item.unitPerCardboard || 0);
+                const unit = item.unit === 'pcs' ? 'шт' : (item.unit || 'кг');
+                const quantity = Number(item.quantity) || 0;
+
+                if (inPack > 0) {
+                    return `${item.name} (${quantity} уп. по ${inPack} ${unit})`;
+                }
+                return `${item.name} (${quantity} ${unit})`;
+            })
             .join('\n');
 
         // 1. Save to Database

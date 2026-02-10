@@ -36,7 +36,9 @@ const ProductCard = ({ product }: ProductCardProps) => {
   };
 
   const formattedPricePerCardboard = formatMoney(product.pricePerCardboard || 0);
-  const packageWeightKg = product.cardboardWeight || 0;
+  const packageWeightKg = product.netWeight || 0;
+  // If we have unitPerCardboard, use it for total quantity calculation if unit is pieces, otherwise weight
+  const unitsPerPackage = product.unitPerCardboard || 1;
   const packagePrice = product.pricePerCardboard || 0;
 
   const derivedPricePerUnit =
@@ -45,12 +47,15 @@ const ProductCard = ({ product }: ProductCardProps) => {
 
   const totalPackages = selectedQuantity;
   const totalKg = packageWeightKg > 0 ? packageWeightKg * totalPackages : 0;
+  // If product uses unitPerCardboard (e.g. pieces in a box), we might want to show total pieces instead of Kg?
+  // Current logic focuses on Kg, let's keep it but use netWeight as per request.
+
   const totalMoney = packagePrice > 0 ? packagePrice * totalPackages : 0;
 
   const formattedPricePerUnit = formatMoney(pricePerUnit || 0);
   const formattedTotalMoney = formatMoney(totalMoney || 0);
 
-  const hasPackage = packageWeightKg > 0 && packagePrice > 0;
+  const hasPackage = (packageWeightKg > 0 || unitsPerPackage > 1) && packagePrice > 0;
   const hasPerUnit = pricePerUnit > 0;
 
   const handleAddToCart = () => {
@@ -136,7 +141,7 @@ const ProductCard = ({ product }: ProductCardProps) => {
                   {formattedPricePerCardboard}
                 </span>
                 <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  pro {formatKg(packageWeightKg)} {product.unit}
+                  pro {packageWeightKg > 0 ? formatKg(packageWeightKg) : (product.unitPerCardboard || 1)} {product.unit}
                 </span>
               </div>
             )}
@@ -180,7 +185,10 @@ const ProductCard = ({ product }: ProductCardProps) => {
                 </span>
                 {hasPackage && (
                   <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 mt-0.5">
-                    {formatKg(totalKg)} {product.unit}
+                    {packageWeightKg > 0
+                      ? `${formatKg(totalKg)} ${product.unit}`
+                      : `${selectedQuantity * (product.unitPerCardboard || 1)} ${product.unit}`
+                    }
                   </span>
                 )}
               </div>

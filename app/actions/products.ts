@@ -636,7 +636,7 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
                     repeatCell: {
                         range: {
                             sheetId: sheetIdNum,
-                            startRowIndex: 0, // From header
+                            startRowIndex: 1, // Skip header
                             endRowIndex: totalRows,
                             startColumnIndex: 3,
                             endColumnIndex: 4
@@ -644,11 +644,12 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
                         cell: {
                             userEnteredFormat: {
                                 textFormat: {
-                                    bold: true
+                                    bold: true,
+                                    fontSize: 12
                                 }
                             }
                         },
-                        fields: 'userEnteredFormat.textFormat.bold'
+                        fields: 'userEnteredFormat.textFormat(bold,fontSize)'
                     }
                 });
 
@@ -696,11 +697,12 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
                         cell: {
                             userEnteredFormat: {
                                 textFormat: {
-                                    bold: true
+                                    bold: true,
+                                    fontSize: 12
                                 }
                             }
                         },
-                        fields: 'userEnteredFormat.textFormat.bold'
+                        fields: 'userEnteredFormat.textFormat(bold,fontSize)'
                     }
                 });
 

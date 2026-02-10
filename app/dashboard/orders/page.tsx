@@ -1,13 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getPaginatedOrders, getProducts, updateOrderStatus, deleteOrder, getOrderStats } from '@/app/actions/products';
+
+import { getPaginatedOrders, getProducts, updateOrderStatus, deleteOrder, getOrderStats, exportAggregationToSheets } from '@/app/actions/products';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, RefreshCw, ShoppingBag, Calendar, User, Mail, ChevronRight, ChevronDown, Trash2, CheckCircle, Clock, ChevronLeft } from 'lucide-react';
+import Link from 'next/link';
+import { Loader2, RefreshCw, ShoppingBag, Calendar, User, Mail, ChevronRight, ChevronDown, Trash2, CheckCircle, Clock, ChevronLeft, FileBarChart2, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
     Select,
     SelectContent,
@@ -15,6 +19,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export default function OrdersPage() {
     const [orders, setOrders] = useState<any[]>([]);
@@ -28,6 +33,11 @@ export default function OrdersPage() {
     const [stats, setStats] = useState({ total: 0, day: 0, week: 0, month: 0 });
     const limit = 20;
 
+    // Date Filter State
+    const [startDate, setStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0]);
+    const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [isExporting, setIsExporting] = useState(false);
+
     useEffect(() => {
         loadOrders();
     }, []);
@@ -35,8 +45,11 @@ export default function OrdersPage() {
     async function loadOrders(page = currentPage) {
         setIsLoading(true);
         try {
+            const start = startDate ? new Date(startDate) : undefined;
+            const end = endDate ? new Date(endDate) : undefined;
+
             const [ordersResult, fetchedProducts, statsResult] = await Promise.all([
-                getPaginatedOrders(page, limit),
+                getPaginatedOrders(page, limit, start, end),
                 getProducts(),
                 getOrderStats()
             ]);
@@ -52,6 +65,26 @@ export default function OrdersPage() {
             toast.error('Не вдалося завантажити замовлення');
         } finally {
             setIsLoading(false);
+        }
+    }
+
+    async function handleExport() {
+        if (!startDate || !endDate) {
+            toast.error('Будь ласка, виберіть дати');
+            return;
+        }
+        setIsExporting(true);
+        try {
+            const result = await exportAggregationToSheets(startDate, endDate);
+            if (result.success) {
+                toast.success(`Звіт успішно експортовано в лист "${result.sheetName}"`);
+            } else {
+                toast.error(`Не вдалося експортувати: ${result.error}`);
+            }
+        } catch (error) {
+            toast.error('Сталася помилка при експорті');
+        } finally {
+            setIsExporting(false);
         }
     }
 
@@ -83,18 +116,64 @@ export default function OrdersPage() {
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                    <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-900 dark:text-zinc-50">Замовлення</h2>
+            <div className="flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-zinc-900 dark:text-zinc-50">Замовлення</h2>
+                    </div>
                 </div>
-                <Button
-                    variant="outline"
-                    onClick={() => loadOrders(1)}
-                    className="rounded-full shadow-sm hover:shadow-md transition-all w-full sm:w-auto justify-center"
-                >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Оновити
-                </Button>
+
+                <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 shadow-sm">
+                    <div className="flex flex-col sm:flex-row items-end gap-4">
+                        <div className="w-full sm:flex-1 grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <Label htmlFor="startDate" className="text-xs font-bold text-zinc-500 uppercase">Від</Label>
+                                <div className="relative">
+                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+                                    <Input
+                                        id="startDate"
+                                        type="date"
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        className="pl-9 h-9 text-sm"
+                                    />
+                                </div>
+                            </div>
+                            <div className="space-y-1.5">
+                                <Label htmlFor="endDate" className="text-xs font-bold text-zinc-500 uppercase">До</Label>
+                                <div className="relative">
+                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+                                    <Input
+                                        id="endDate"
+                                        type="date"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="pl-9 h-9 text-sm"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <Button
+                                onClick={() => loadOrders(1)}
+                                className="flex-1 sm:flex-none h-9 rounded-full bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                            >
+                                <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                                Оновити
+                            </Button>
+
+                            <Button
+                                onClick={handleExport}
+                                disabled={isExporting}
+                                className="flex-1 sm:flex-none h-9 rounded-full bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow-md transition-all"
+                            >
+                                {isExporting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <FileText className="mr-2 h-3.5 w-3.5" />}
+                                Звіт (Sheets)
+                            </Button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

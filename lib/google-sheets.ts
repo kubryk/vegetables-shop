@@ -143,3 +143,96 @@ export const replaceSheetContent = async (
     throw new Error(`Помилка Google Sheets: ${message}`);
   }
 };
+
+// Create a new sheet (tab) in the spreadsheet
+export const createSheet = async (spreadsheetId: string, title: string): Promise<number | null> => {
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n').replace(/^"|"$/g, ''),
+      },
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    });
+
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    const response = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
+          addSheet: {
+            properties: {
+              title,
+            }
+          }
+        }]
+      }
+    });
+
+    const newSheetId = response.data.replies?.[0]?.addSheet?.properties?.sheetId;
+    console.log(`Created new sheet: ${title} (ID: ${newSheetId})`);
+    return newSheetId ?? null;
+  } catch (error: any) {
+    console.error('Failed to create sheet:', error);
+    throw new Error(`Failed to create sheet "${title}": ${error.message}`);
+  }
+};
+
+// Write data to a specific sheet starting at A1 (simple update)
+export const writeToSheet = async (spreadsheetId: string, sheetTitle: string, data: any[][]): Promise<void> => {
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n').replace(/^"|"$/g, ''),
+      },
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    });
+
+    const sheets = google.sheets({ version: 'v4', auth });
+    const safeTitle = `'${sheetTitle.replace(/'/g, "''")}'`;
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${safeTitle}!A1`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: data,
+      },
+    });
+    console.log(`Wrote ${data.length} rows to sheet: ${sheetTitle}`);
+  } catch (error: any) {
+    console.error('Failed to write to sheet:', error);
+    throw new Error(`Failed to write to sheet "${sheetTitle}": ${error.message}`);
+  }
+};
+
+export const formatSheetCells = async (
+  spreadsheetId: string,
+  sheetId: number,
+  requests: any[]
+): Promise<void> => {
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n').replace(/^"|"$/g, ''),
+      },
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    });
+
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests
+      }
+    });
+    console.log(`Formatted cells in sheet ID: ${sheetId}`);
+  } catch (error: any) {
+    console.error('Failed to format cells:', error);
+    throw new Error(`Failed to format cells: ${error.message}`);
+  }
+};

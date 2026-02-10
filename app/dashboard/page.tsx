@@ -170,6 +170,25 @@ const ProductForm = ({
                             </div>
                         </div>
                     </div>
+
+                    <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                        <div className="space-y-2">
+                            <Label className="text-[10px] font-bold uppercase text-zinc-400">Тип агрегації у звіті</Label>
+                            <Select
+                                value={newProduct.agregationResult || 'weight'}
+                                onValueChange={(v) => setNewProduct({ ...newProduct, agregationResult: v })}
+                            >
+                                <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="weight">Вага (Total Weight)</SelectItem>
+                                    <SelectItem value="cardboard">Штуки (Pcs / Boxes)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <p className="text-[10px] text-zinc-400">
+                                Визначає, як цей товар буде відображатися у зведеному звіті: як загальна вага або як кількість ящиків/штук.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -337,7 +356,7 @@ export default function ProductsPage() {
     }
 
     async function handleDeleteProduct(id: string, name: string) {
-        if (confirm(`Are you sure you want to delete ${name}?`)) {
+        if (confirm(`Ви впевнені, що хочете видалити ${name}?`)) {
             const result = await deleteProduct(id);
             if (result.success) {
                 toast.success('Товар видалено');

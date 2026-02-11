@@ -175,7 +175,7 @@ const ProductForm = ({
                         <div className="space-y-2">
                             <Label className="text-[10px] font-bold uppercase text-zinc-400">Тип агрегації у звіті</Label>
                             <Select
-                                value={newProduct.agregationResult || 'weight'}
+                                value={newProduct.agregationResult}
                                 onValueChange={(v) => setNewProduct({ ...newProduct, agregationResult: v })}
                             >
                                 <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
@@ -243,7 +243,7 @@ export default function ProductsPage() {
         unit: 'kg',
         currency: 'EUR',
         image: '',
-        agregationResult: '',
+        agregationResult: 'weight',
         active: true,
     });
 
@@ -343,7 +343,7 @@ export default function ProductsPage() {
                 unit: 'kg',
                 currency: 'EUR',
                 image: '',
-                agregationResult: '',
+                agregationResult: 'weight',
                 active: true,
             });
             loadProducts();
@@ -386,7 +386,7 @@ export default function ProductsPage() {
             unit: 'kg',
             currency: 'EUR',
             image: '',
-            agregationResult: '',
+            agregationResult: 'weight',
             active: true,
         });
     }

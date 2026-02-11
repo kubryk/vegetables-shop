@@ -17,6 +17,20 @@ export async function POST(request: Request) {
             orderDate,
         } = body;
 
+        const originalDate = new Date(orderDate);
+
+        // Calculate Berlin time representation as UTC for DB storage
+        const berlinParts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Europe/Berlin',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false
+        }).formatToParts(originalDate);
+
+        const p: any = berlinParts.reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
+        const dbDate = new Date(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}Z`);
+
+
         console.log('Parsed order data:', { customerName, customerEmail, itemCount: items?.length, totalPrice });
 
         // Format items for summary
@@ -44,7 +58,7 @@ export async function POST(request: Request) {
                 totalPrice: parseFloat(totalPrice.toString()),
                 currency,
                 status: 'processing',
-                orderDate: new Date(orderDate),
+                orderDate: dbDate,
             }).returning();
             dbOrderId = newOrder.id;
             console.log('Order saved to DB with ID:', dbOrderId);
@@ -67,7 +81,7 @@ export async function POST(request: Request) {
                 itemsSummary,
                 totalPrice.toString(),
                 currency,
-                new Date(orderDate).toLocaleString('uk-UA'),
+                originalDate.toLocaleString('uk-UA', { timeZone: 'Europe/Berlin' }),
                 'processing',
             ];
 

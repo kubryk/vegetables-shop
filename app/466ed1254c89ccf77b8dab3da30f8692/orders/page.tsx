@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
     Select,
     SelectContent,
@@ -37,6 +38,8 @@ export default function OrdersPage() {
     const [startDate, setStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0]);
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
     const [isExporting, setIsExporting] = useState(false);
+    const [showExportSuccess, setShowExportSuccess] = useState(false);
+    const [exportUrl, setExportUrl] = useState('');
 
     useEffect(() => {
         loadOrders(1);
@@ -77,7 +80,8 @@ export default function OrdersPage() {
         try {
             const result = await exportAggregationToSheets(startDate, endDate);
             if (result.success) {
-                toast.success(`Звіт успішно експортовано в лист "${result.sheetName}"`);
+                setExportUrl(result.sheetUrl || '');
+                setShowExportSuccess(true);
             } else {
                 toast.error(`Не вдалося експортувати: ${result.error}`);
             }
@@ -116,6 +120,7 @@ export default function OrdersPage() {
 
     return (
         <div className="space-y-6">
+
             <div className="flex flex-col gap-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
@@ -232,11 +237,11 @@ export default function OrdersPage() {
                                                             <div className="flex flex-col text-xs text-zinc-500">
                                                                 <div className="flex items-center gap-1.5">
                                                                     <Calendar size={12} />
-                                                                    {new Date(order.orderDate).toLocaleDateString('uk-UA')}
+                                                                    {new Date(order.orderDate).toLocaleDateString('uk-UA', { timeZone: 'UTC' })}
                                                                 </div>
                                                                 <div className="flex items-center gap-1.5 ml-[18px] text-[10px] text-zinc-400">
                                                                     <Clock size={10} />
-                                                                    {new Date(order.orderDate).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+                                                                    {new Date(order.orderDate).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
                                                                 </div>
                                                             </div>
                                                         </td>
@@ -341,7 +346,7 @@ export default function OrdersPage() {
                                                         </span>
                                                     </div>
                                                     <Badge variant="outline" className="text-[10px] bg-zinc-50 dark:bg-zinc-800 border-zinc-200">
-                                                        {new Date(order.orderDate).toLocaleDateString('uk-UA')}
+                                                        {new Date(order.orderDate).toLocaleDateString('uk-UA', { timeZone: 'UTC' })}
                                                     </Badge>
                                                 </div>
 
@@ -439,7 +444,42 @@ export default function OrdersPage() {
                     </Button>
                 </div>
             )}
-        </div>
+
+            <Dialog open={showExportSuccess} onOpenChange={setShowExportSuccess}>
+                <DialogContent className="sm:max-w-md bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-green-600">
+                            <CheckCircle className="h-5 w-5" />
+                            Звіт успішно сформовано
+                        </DialogTitle>
+                        <DialogDescription className="text-zinc-500">
+                            Звіт по замовленнях за вибраний період успішно експортовано в Google Sheets.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex items-center justify-center p-4">
+                        <FileText className="h-16 w-16 text-green-100" />
+                    </div>
+                    <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
+                        <Button
+                            variant="secondary"
+                            onClick={() => setShowExportSuccess(false)}
+                            className="bg-zinc-100 hover:bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+                        >
+                            Закрити
+                        </Button>
+                        <Button
+                            onClick={() => {
+                                window.open(exportUrl, '_blank');
+                                setShowExportSuccess(false);
+                            }}
+                            className="bg-green-600 hover:bg-green-700 text-white shadow-md rounded-md"
+                        >
+                            Відкрити таблицю
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </div >
     );
 }
 
@@ -459,7 +499,7 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                     </div>
                     <div className="flex items-center gap-2 text-sm text-zinc-500">
                         <Calendar size={14} className="text-zinc-400" />
-                        <span className="font-sans">Замовлення від {new Date(order.orderDate).toLocaleString('uk-UA')}</span>
+                        <span className="font-sans">Замовлення від {new Date(order.orderDate).toLocaleString('uk-UA', { timeZone: 'UTC' })}</span>
                     </div>
                 </div>
             </div>

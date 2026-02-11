@@ -208,6 +208,7 @@ export async function deleteProduct(id: string) {
     }
 }
 
+// getOrders
 export async function getOrders(startDate?: Date, endDate?: Date) {
     await verifyAuth();
     try {
@@ -216,7 +217,7 @@ export async function getOrders(startDate?: Date, endDate?: Date) {
         if (startDate && endDate) {
             // Ensure we cover the full range of the end day
             const endOfDay = new Date(endDate);
-            endOfDay.setHours(23, 59, 59, 999);
+            endOfDay.setUTCHours(23, 59, 59, 999);
 
             return await db.select()
                 .from(orders)
@@ -244,7 +245,7 @@ export async function getPaginatedOrders(page: number = 1, limit: number = 20, s
         let conditions = undefined;
         if (startDate && endDate) {
             const endOfDay = new Date(endDate);
-            endOfDay.setHours(23, 59, 59, 999);
+            endOfDay.setUTCHours(23, 59, 59, 999);
             conditions = and(
                 gte(orders.orderDate, startDate),
                 lte(orders.orderDate, endOfDay)
@@ -283,8 +284,6 @@ export async function getPaginatedOrders(page: number = 1, limit: number = 20, s
         };
     }
 }
-
-
 
 export async function getOrderStats() {
     await verifyAuth();
@@ -382,12 +381,13 @@ export async function deleteOrder(orderId: string) {
 }
 
 
+
 export async function exportAggregationToSheets(startDate: string, endDate: string) {
     await verifyAuth();
     try {
         const start = new Date(startDate);
         const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
+        end.setUTCHours(23, 59, 59, 999);
 
         // Fetch Orders
         const filteredOrders = await db.select()
@@ -574,8 +574,8 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
 
         const { createSheet, replaceSheetContent, formatSheetCells } = await import('@/lib/google-sheets');
 
-        const formatDate = (d: Date) => `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`;
-        const formatTime = (d: Date) => `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        const formatDate = (d: Date) => d.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Berlin' });
+        const formatTime = (d: Date) => d.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin', hour12: false });
         const title = `Звіт ${formatDate(start)} - ${formatDate(end)} (${formatDate(new Date())} ${formatTime(new Date())})`;
 
         const sheetIdNum = await createSheet(sheetId, title);
@@ -742,7 +742,9 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
             }
         }
 
-        return { success: true, sheetName: title };
+        const sheetUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/edit#gid=${sheetIdNum}`;
+
+        return { success: true, sheetName: title, sheetUrl };
     } catch (error: any) {
         console.error('Export failed:', error);
         return { success: false, error: error.message };

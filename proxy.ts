@@ -4,7 +4,7 @@ export const config = {
     matcher: ['/466ed1254c89ccf77b8dab3da30f8692/:path*'],
 };
 
-export function middleware(req: NextRequest) {
+export default function proxy(req: NextRequest) {
     const basicAuth = req.headers.get('authorization');
     const url = req.nextUrl;
 

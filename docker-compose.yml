@@ -6,24 +6,30 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: always
-    ports:
-      - "3000:3000"
+    # ports:
+    #   - "3000:3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vegetables.rule=Host(`matskov.com`)"
+      - "traefik.http.routers.vegetables.entrypoints=websecure"
+      - "traefik.http.routers.vegetables.tls.certresolver=myresolver"
+      - "traefik.http.services.vegetables.loadbalancer.server.port=3000"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - DASHBOARD_USER=${DASHBOARD_USER}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD}
+
       - GOOGLE_SHEET_ID=${GOOGLE_SHEET_ID}
       - GOOGLE_SHEET_NAME=${GOOGLE_SHEET_NAME}
       - GOOGLE_SHEET_ORDERS_ID=${GOOGLE_SHEET_ORDERS_ID}
       - GOOGLE_SHEET_ORDERS_NAME=${GOOGLE_SHEET_ORDERS_NAME}
-      - GOOGLE_CLIENT_EMAIL=${GOOGLE_CLIENT_EMAIL}
+      
+      - GOOGLE_CLIENT_EMAIL=${GOOGLE_SERVICE_ACCOUNT_EMAIL}
       - GOOGLE_PRIVATE_KEY=${GOOGLE_PRIVATE_KEY}
       - TZ=Europe/Berlin
-    volumes:
-      - ./.next/static:/app/.next/static
     networks:
-      - app-network
+      - vegetables_network
 
 networks:
-  app-network:
-    driver: bridge
+  vegetables_network:
+    external: true

@@ -17,7 +17,7 @@ const Home = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string>('Всі');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Alle');
 
   type SortOption =
     | 'default'
@@ -51,14 +51,14 @@ const Home = () => {
         const response = await fetch('/api/products');
 
         if (!response.ok) {
-          throw new Error('Помилка при завантаженні товарів');
+          throw new Error('Fehler beim Laden der Produkte');
         }
 
         const data = await response.json();
         setProducts(data.products || []);
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Помилка при завантаженні товарів');
+        setError(err instanceof Error ? err.message : 'Fehler beim Laden der Produkte');
         console.error('Error fetching products:', err);
       } finally {
         setLoading(false);
@@ -69,12 +69,12 @@ const Home = () => {
   }, []);
 
   const categories = useMemo(() => {
-    return ['Всі', ...Array.from(new Set(products.map((p) => p.category)))];
+    return ['Alle', ...Array.from(new Set(products.map((p) => p.category)))];
   }, [products]);
 
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
-      const matchesCategory = selectedCategory === 'Всі' || p.category === selectedCategory;
+      const matchesCategory = selectedCategory === 'Alle' || p.category === selectedCategory;
       const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesCategory && matchesSearch;
     });
@@ -99,11 +99,11 @@ const Home = () => {
     if (sortOption === 'default') return list;
 
     if (sortOption === 'name-asc') {
-      return list.sort((a, b) => a.name.localeCompare(b.name, 'uk', { sensitivity: 'base' }));
+      return list.sort((a, b) => a.name.localeCompare(b.name, 'de', { sensitivity: 'base' }));
     }
 
     if (sortOption === 'name-desc') {
-      return list.sort((a, b) => b.name.localeCompare(a.name, 'uk', { sensitivity: 'base' }));
+      return list.sort((a, b) => b.name.localeCompare(a.name, 'de', { sensitivity: 'base' }));
     }
 
     if (sortOption === 'priceUnit-asc') {
@@ -150,7 +150,7 @@ const Home = () => {
   };
 
   const handleResetFilters = () => {
-    setSelectedCategory('Всі');
+    setSelectedCategory('Alle');
     setSortOption('default');
     setSearchQuery('');
     setCurrentPage(1);
@@ -171,7 +171,7 @@ const Home = () => {
                 handleResetFilters();
               }}
               className="flex cursor-pointer items-center gap-2 transition-opacity hover:opacity-80 sm:gap-4"
-              aria-label="Повернутися на головну, очистити фільтри"
+              aria-label="Zurück zur Startseite, Filter zurücksetzen"
             >
               <div className="gradient-green flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl text-white sm:h-16 sm:w-16">
                 <Image
@@ -197,7 +197,7 @@ const Home = () => {
                 className="relative h-10 w-10 border-2 border-[hsl(142_76%_36%)]/20 bg-white hover:border-[hsl(142_76%_36%)] hover:bg-[hsl(142_76%_36%)]/5 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800 sm:h-11 sm:w-11"
                 onClick={handleCartClick}
                 onKeyDown={handleKeyDown}
-                aria-label="Відкрити кошик"
+                aria-label="Warenkorb öffnen"
                 tabIndex={0}
               >
                 <ShoppingCart className="h-5 w-5 text-[hsl(142_76%_36%)]" />
@@ -253,7 +253,7 @@ const Home = () => {
                 </div>
                 <Input
                   type="search"
-                  placeholder="Пошук товарів..."
+                  placeholder="Produkte suchen..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="h-11 w-full rounded-xl border-0 bg-white pl-10 ring-1 ring-gray-200 focus-visible:ring-2 focus-visible:ring-[hsl(142_76%_36%)] dark:bg-zinc-900 dark:ring-zinc-800"
@@ -267,15 +267,15 @@ const Home = () => {
                   value={sortOption}
                   onChange={(e) => setSortOption(e.target.value as SortOption)}
                   className="h-11 w-full min-w-[200px] appearance-none rounded-xl border-0 bg-white px-4 pr-8 text-sm font-bold text-gray-700 shadow-sm ring-1 ring-gray-200 outline-none transition-all hover:bg-gray-50 focus:ring-2 focus:ring-[hsl(142_76%_36%)] dark:bg-zinc-900 dark:text-zinc-200 dark:ring-zinc-800 dark:hover:bg-zinc-800"
-                  aria-label="Сортування товарів"
+                  aria-label="Produkte sortieren"
                 >
-                  <option value="default">Сортування: За замовчуванням</option>
-                  <option value="name-asc">Назва: А → Я</option>
-                  <option value="name-desc">Назва: Я → А</option>
-                  <option value="priceUnit-asc">Ціна за одиницю: ↑</option>
-                  <option value="priceUnit-desc">Ціна за одиницю: ↓</option>
-                  <option value="pricePack-asc">Ціна за упаковку: ↑</option>
-                  <option value="pricePack-desc">Ціна за упаковку: ↓</option>
+                  <option value="default">Sortierung: Standard</option>
+                  <option value="name-asc">Name: A → Z</option>
+                  <option value="name-desc">Name: Z → A</option>
+                  <option value="priceUnit-asc">Preis pro Einheit: ↑</option>
+                  <option value="priceUnit-desc">Preis pro Einheit: ↓</option>
+                  <option value="pricePack-asc">Preis pro Packung: ↑</option>
+                  <option value="pricePack-desc">Preis pro Packung: ↓</option>
                 </select>
                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
                   <ListFilter className="h-4 w-4" />
@@ -288,7 +288,7 @@ const Home = () => {
               <div className="flex flex-col items-center justify-center rounded-3xl bg-white/50 py-24 text-center backdrop-blur-sm dark:bg-zinc-900/50">
                 <Loader2 className="h-12 w-12 animate-spin text-[hsl(142_76%_36%)]" />
                 <p className="mt-4 text-sm font-medium text-gray-500 dark:text-zinc-400">
-                  Завантаження товарів...
+                  Produkte werden geladen...
                 </p>
               </div>
             ) : error ? (
@@ -297,7 +297,7 @@ const Home = () => {
                   <AlertCircle className="h-10 w-10 text-red-500" />
                 </div>
                 <p className="text-xl font-bold text-gray-900 dark:text-zinc-200">
-                  Сталася помилка
+                  Ein Fehler ist aufgetreten
                 </p>
                 <p className="mt-2 text-sm text-gray-500 dark:text-zinc-400">
                   {error}
@@ -307,7 +307,7 @@ const Home = () => {
                   onClick={() => window.location.reload()}
                   className="mt-6 border-red-200 hover:bg-red-50 dark:border-red-900/50 dark:hover:bg-red-900/20"
                 >
-                  Спробувати ще раз
+                  Nochmals versuchen
                 </Button>
               </div>
             ) : filteredProducts.length === 0 ? (
@@ -316,10 +316,10 @@ const Home = () => {
                   <Leaf className="h-10 w-10 text-gray-300 dark:text-zinc-600" />
                 </div>
                 <p className="text-xl font-bold text-gray-900 dark:text-zinc-200">
-                  {searchQuery ? 'Товарів не знайдено за вашим запитом' : 'Товарів не знайдено'}
+                  {searchQuery ? 'Keine Produkte für Ihre Suche gefunden' : 'Keine Produkte gefunden'}
                 </p>
                 <p className="mt-2 text-sm text-gray-500">
-                  {searchQuery ? 'Спробуйте змінити пошуковий запит' : 'Спробуйте оновити сторінку'}
+                  {searchQuery ? 'Versuchen Sie, Ihre Suchanfrage zu ändern' : 'Versuchen Sie, die Seite zu aktualisieren'}
                 </p>
                 {searchQuery && (
                   <Button
@@ -327,7 +327,7 @@ const Home = () => {
                     onClick={() => setSearchQuery('')}
                     className="mt-6 border-dashed"
                   >
-                    Очистити пошук
+                    Suche löschen
                   </Button>
                 )}
               </div>
@@ -346,7 +346,7 @@ const Home = () => {
                         variant="outline"
                         onClick={handlePrevPage}
                         disabled={safeCurrentPage === 1}
-                        aria-label="Попередня сторінка"
+                        aria-label="Vorherige Seite"
                         className="h-10 w-10 rounded-xl border-0 bg-white p-0 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                       >
                         ←
@@ -376,7 +376,7 @@ const Home = () => {
                         variant="outline"
                         onClick={handleNextPage}
                         disabled={safeCurrentPage === totalPages}
-                        aria-label="Наступна сторінка"
+                        aria-label="Nächste Seite"
                         className="h-10 w-10 rounded-xl border-0 bg-white p-0 shadow-sm hover:bg-gray-50 disabled:opacity-50 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                       >
                         →

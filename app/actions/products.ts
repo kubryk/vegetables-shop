@@ -5,7 +5,25 @@ import { products, orders } from '@/lib/db/schema';
 import { eq, desc, and, gte, lte, count, sql, ilike, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 
+import { headers } from 'next/headers';
+
+async function verifyAuth() {
+    const list = await headers();
+    const authHeader = list.get('authorization');
+    if (!authHeader) {
+        throw new Error('Unauthorized');
+    }
+
+    const authValue = authHeader.split(' ')[1];
+    const [user, pwd] = atob(authValue).split(':');
+
+    if (user !== process.env.DASHBOARD_USER || pwd !== process.env.DASHBOARD_PASSWORD) {
+        throw new Error('Unauthorized');
+    }
+}
+
 export async function getProducts() {
+    await verifyAuth();
     try {
         return await db.select().from(products).orderBy(products.name);
     } catch (error) {
@@ -15,6 +33,7 @@ export async function getProducts() {
 }
 
 export async function getPaginatedProducts(page: number = 1, limit: number = 20, query?: string) {
+    await verifyAuth();
     try {
         const offset = (page - 1) * limit;
 
@@ -66,11 +85,12 @@ export async function getPaginatedProducts(page: number = 1, limit: number = 20,
 }
 
 export async function addProduct(data: Omit<typeof products.$inferInsert, 'id'> & { id?: string }) {
+    await verifyAuth();
     try {
         const id = data.id || Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
         await db.insert(products).values({ ...data, id });
         await exportProductsToSheets();
-        revalidatePath('/dashboard');
+        revalidatePath('/466ed1254c89ccf77b8dab3da30f8692');
         revalidatePath('/');
         return { success: true };
     } catch (error: any) {
@@ -80,10 +100,11 @@ export async function addProduct(data: Omit<typeof products.$inferInsert, 'id'> 
 }
 
 export async function updateProduct(id: string, data: Partial<typeof products.$inferInsert>) {
+    await verifyAuth();
     try {
         await db.update(products).set(data).where(eq(products.id, id));
         await exportProductsToSheets();
-        revalidatePath('/dashboard');
+        revalidatePath('/466ed1254c89ccf77b8dab3da30f8692');
         revalidatePath('/');
         return { success: true };
     } catch (error: any) {
@@ -93,10 +114,11 @@ export async function updateProduct(id: string, data: Partial<typeof products.$i
 }
 
 export async function toggleProductStatus(id: string, active: boolean) {
+    await verifyAuth();
     try {
         await db.update(products).set({ active }).where(eq(products.id, id));
         await exportProductsToSheets();
-        revalidatePath('/dashboard');
+        revalidatePath('/466ed1254c89ccf77b8dab3da30f8692');
         revalidatePath('/');
         return { success: true };
     } catch (error: any) {
@@ -107,6 +129,7 @@ export async function toggleProductStatus(id: string, active: boolean) {
 import { fetchGoogleSheetAPI, replaceSheetContent } from '@/lib/google-sheets';
 
 export async function syncProducts() {
+    await verifyAuth();
     try {
         const sheetId = process.env.GOOGLE_SHEET_ID;
         const sheetName = process.env.GOOGLE_SHEET_NAME || 'Sheet1';
@@ -162,7 +185,7 @@ export async function syncProducts() {
             importedCount++;
         }
 
-        revalidatePath('/dashboard');
+        revalidatePath('/466ed1254c89ccf77b8dab3da30f8692');
         revalidatePath('/');
         return { success: true, count: importedCount };
     } catch (error: any) {
@@ -172,10 +195,11 @@ export async function syncProducts() {
 }
 
 export async function deleteProduct(id: string) {
+    await verifyAuth();
     try {
         await db.delete(products).where(eq(products.id, id));
         await exportProductsToSheets();
-        revalidatePath('/dashboard');
+        revalidatePath('/466ed1254c89ccf77b8dab3da30f8692');
         revalidatePath('/');
         return { success: true };
     } catch (error: any) {
@@ -185,6 +209,7 @@ export async function deleteProduct(id: string) {
 }
 
 export async function getOrders(startDate?: Date, endDate?: Date) {
+    await verifyAuth();
     try {
         let query = db.select().from(orders);
 
@@ -211,6 +236,7 @@ export async function getOrders(startDate?: Date, endDate?: Date) {
 
 
 export async function getPaginatedOrders(page: number = 1, limit: number = 20, startDate?: Date, endDate?: Date) {
+    await verifyAuth();
     try {
         const offset = (page - 1) * limit;
 
@@ -261,6 +287,7 @@ export async function getPaginatedOrders(page: number = 1, limit: number = 20, s
 
 
 export async function getOrderStats() {
+    await verifyAuth();
     try {
         const now = new Date();
         const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -285,6 +312,7 @@ export async function getOrderStats() {
 }
 
 export async function exportProductsToSheets() {
+    await verifyAuth();
     try {
         const sheetId = process.env.GOOGLE_SHEET_ID;
         const sheetName = process.env.GOOGLE_SHEET_NAME || 'Sheet1';
@@ -328,10 +356,11 @@ export async function getSheetName() {
 }
 
 export async function updateOrderStatus(orderId: string, status: string) {
+    await verifyAuth();
     try {
         // @ts-ignore - uuid type mismatch in some versions of drizzle
         await db.update(orders).set({ status }).where(eq(orders.id, orderId));
-        revalidatePath('/dashboard/orders');
+        revalidatePath('/466ed1254c89ccf77b8dab3da30f8692/orders');
         return { success: true };
     } catch (error) {
         console.error('Failed to update order status:', error);
@@ -340,10 +369,11 @@ export async function updateOrderStatus(orderId: string, status: string) {
 }
 
 export async function deleteOrder(orderId: string) {
+    await verifyAuth();
     try {
         // @ts-ignore
         await db.delete(orders).where(eq(orders.id, orderId));
-        revalidatePath('/dashboard/orders');
+        revalidatePath('/466ed1254c89ccf77b8dab3da30f8692/orders');
         return { success: true };
     } catch (error) {
         console.error('Failed to delete order:', error);
@@ -353,6 +383,7 @@ export async function deleteOrder(orderId: string) {
 
 
 export async function exportAggregationToSheets(startDate: string, endDate: string) {
+    await verifyAuth();
     try {
         const start = new Date(startDate);
         const end = new Date(endDate);
@@ -543,8 +574,9 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
 
         const { createSheet, replaceSheetContent, formatSheetCells } = await import('@/lib/google-sheets');
 
-        const now = new Date();
-        const title = `OrdRep ${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+        const formatDate = (d: Date) => `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+        const formatTime = (d: Date) => `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        const title = `Звіт ${formatDate(start)} - ${formatDate(end)} (${formatDate(new Date())} ${formatTime(new Date())})`;
 
         const sheetIdNum = await createSheet(sheetId, title);
         await replaceSheetContent(sheetId, `${title}!A1`, allRows);

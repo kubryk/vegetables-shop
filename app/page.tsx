@@ -170,15 +170,20 @@ const Home = () => {
                 e.preventDefault();
                 handleResetFilters();
               }}
-              className="flex cursor-pointer items-center gap-4 transition-opacity hover:opacity-80"
+              className="flex cursor-pointer items-center gap-2 transition-opacity hover:opacity-80 sm:gap-4"
               aria-label="Повернутися на головну, очистити фільтри"
             >
-              <div className="gradient-green flex  items-center justify-center rounded-xl text-white ">
-                {/* <Leaf className="h-7 w-7" /> */}
-                <Image src="/logo.jpeg" alt="Logo" width={64} height={64} />
+              <div className="gradient-green flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl text-white sm:h-16 sm:w-16">
+                <Image
+                  src="/logo.jpeg"
+                  alt="Logo"
+                  width={64}
+                  height={64}
+                  className="h-full w-full object-cover"
+                />
               </div>
               <div>
-                <h1 className="bg-linear-to-r from-[hsl(142_76%_36%)] to-[hsl(142_70%_45%)] bg-clip-text text-xl font-bold tracking-tight text-transparent sm:text-2xl">
+                <h1 className="bg-linear-to-r from-[hsl(142_76%_36%)] to-[hsl(142_70%_45%)] bg-clip-text text-base font-bold whitespace-nowrap tracking-tight text-transparent sm:text-2xl">
                   MATSKOV ENTERPRISES
                 </h1>
               </div>
@@ -189,7 +194,7 @@ const Home = () => {
               <Button
                 variant="outline"
                 size="icon"
-                className="relative h-11 w-11 border-2 border-[hsl(142_76%_36%)]/20 bg-white hover:border-[hsl(142_76%_36%)] hover:bg-[hsl(142_76%_36%)]/5 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+                className="relative h-10 w-10 border-2 border-[hsl(142_76%_36%)]/20 bg-white hover:border-[hsl(142_76%_36%)] hover:bg-[hsl(142_76%_36%)]/5 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800 sm:h-11 sm:w-11"
                 onClick={handleCartClick}
                 onKeyDown={handleKeyDown}
                 aria-label="Відкрити кошик"

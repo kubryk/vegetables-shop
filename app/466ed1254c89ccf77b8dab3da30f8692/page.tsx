@@ -247,6 +247,8 @@ export default function ProductsPage() {
         active: true,
     });
 
+    const isFirstRender = React.useRef(true);
+
     useEffect(() => {
         setIsMounted(true);
         loadProducts();
@@ -255,6 +257,11 @@ export default function ProductsPage() {
 
     // Search debounce
     useEffect(() => {
+        if (isFirstRender.current) {
+            isFirstRender.current = false;
+            return;
+        }
+
         const handler = setTimeout(() => {
             loadProducts(1, searchQuery);
         }, 500);

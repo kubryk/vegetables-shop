@@ -39,8 +39,8 @@ export default function OrdersPage() {
     const [isExporting, setIsExporting] = useState(false);
 
     useEffect(() => {
-        loadOrders();
-    }, []);
+        loadOrders(1);
+    }, [startDate, endDate]);
 
     async function loadOrders(page = currentPage) {
         setIsLoading(true);
@@ -124,8 +124,8 @@ export default function OrdersPage() {
                 </div>
 
                 <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 shadow-sm">
-                    <div className="flex flex-col sm:flex-row items-end gap-4">
-                        <div className="w-full sm:flex-1 grid grid-cols-2 gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+                        <div className="w-full sm:flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-1.5">
                                 <Label htmlFor="startDate" className="text-xs font-bold text-zinc-500 uppercase">Від</Label>
                                 <div className="relative">
@@ -135,7 +135,7 @@ export default function OrdersPage() {
                                         type="date"
                                         value={startDate}
                                         onChange={(e) => setStartDate(e.target.value)}
-                                        className="pl-9 h-9 text-sm"
+                                        className="pl-9 h-9 text-sm w-full"
                                     />
                                 </div>
                             </div>
@@ -148,20 +148,14 @@ export default function OrdersPage() {
                                         type="date"
                                         value={endDate}
                                         onChange={(e) => setEndDate(e.target.value)}
-                                        className="pl-9 h-9 text-sm"
+                                        className="pl-9 h-9 text-sm w-full"
                                     />
                                 </div>
                             </div>
                         </div>
 
                         <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <Button
-                                onClick={() => loadOrders(1)}
-                                className="flex-1 sm:flex-none h-9 rounded-full bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                            >
-                                <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                                Оновити
-                            </Button>
+
 
                             <Button
                                 onClick={handleExport}
@@ -176,44 +170,14 @@ export default function OrdersPage() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card className="border-none shadow-sm bg-white dark:bg-zinc-900 overflow-hidden relative">
-                    <CardHeader className="pb-2">
-                        <CardDescription>Всього</CardDescription>
-                        <CardTitle className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-zinc-50">
-                            {stats.total}
-                        </CardTitle>
-                    </CardHeader>
-                </Card>
-                <Card className="border-none shadow-sm bg-white dark:bg-zinc-900 overflow-hidden relative">
-                    <CardHeader className="pb-2">
-                        <CardDescription>Сьогодні</CardDescription>
-                        <CardTitle className="text-2xl sm:text-3xl font-black text-blue-600">
-                            {stats.day}
-                        </CardTitle>
-                    </CardHeader>
-                </Card>
-                <Card className="border-none shadow-sm bg-white dark:bg-zinc-900 overflow-hidden relative">
-                    <CardHeader className="pb-2">
-                        <CardDescription>7 днів</CardDescription>
-                        <CardTitle className="text-2xl sm:text-3xl font-black text-indigo-600">
-                            {stats.week}
-                        </CardTitle>
-                    </CardHeader>
-                </Card>
-                <Card className="border-none shadow-sm bg-white dark:bg-zinc-900 overflow-hidden relative">
-                    <CardHeader className="pb-2">
-                        <CardDescription>30 днів</CardDescription>
-                        <CardTitle className="text-2xl sm:text-3xl font-black text-purple-600">
-                            {stats.month}
-                        </CardTitle>
-                    </CardHeader>
-                </Card>
-            </div>
-
             <Card className="border-none shadow-sm bg-white dark:bg-zinc-900 overflow-hidden">
-                <CardHeader className="border-b border-zinc-100 dark:border-zinc-800">
-                    <CardTitle className="text-xl">Список замовлень</CardTitle>
+                <CardHeader className="border-b border-zinc-100 dark:border-zinc-800 py-4">
+                    <div className="flex items-center justify-between">
+                        <CardTitle className="text-xl">Список замовлень</CardTitle>
+                        <Badge variant="secondary" className="bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                            Знайдено: {totalOrders}
+                        </Badge>
+                    </div>
                 </CardHeader>
                 <CardContent className="p-0">
                     {isLoading ? (

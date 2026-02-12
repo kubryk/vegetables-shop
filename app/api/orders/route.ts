@@ -68,7 +68,8 @@ export async function POST(request: Request) {
             // but in a production app we might want to handle this differently
         }
 
-        // 2. Save to Google Sheets
+        // 2. Save to Google Sheets - DISABLED
+        /*
         const sheetId = process.env.GOOGLE_SHEET_ORDERS_ID;
         const sheetName = process.env.GOOGLE_SHEET_ORDERS_NAME || 'Замовлення';
 
@@ -89,6 +90,7 @@ export async function POST(request: Request) {
                 console.error('Failed to sync to Google Sheets:', err);
             });
         }
+        */
 
         return NextResponse.json({
             success: true,

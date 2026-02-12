@@ -11,4 +11,6 @@ export type Product = {
   currency: string; // напр. EUR, UAH
   image?: string;
   agregationResult?: string;
+  position?: number;
+  externalUrl?: string;
 };

@@ -372,13 +372,13 @@ export default function OrdersPage() {
                                                                 disabled={actionOrderId === order.id}
                                                             >
                                                                 <SelectTrigger className={cn(
-                                                                    "h-7 w-[110px] rounded-full font-bold text-[10px] border-none shadow-none focus:ring-0",
+                                                                    "h-9 w-[130px] rounded-full font-bold text-xs border-none shadow-none focus:ring-0",
                                                                     order.status === 'completed'
                                                                         ? "bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400"
                                                                         : "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400"
                                                                 )}>
                                                                     <div className="flex items-center gap-1.5">
-                                                                        {order.status === 'completed' ? <CheckCircle size={10} /> : <Clock size={10} />}
+                                                                        {order.status === 'completed' ? <CheckCircle size={14} /> : <Clock size={14} />}
                                                                         <SelectValue />
                                                                     </div>
                                                                 </SelectTrigger>
@@ -391,11 +391,11 @@ export default function OrdersPage() {
                                                             <Button
                                                                 size="sm"
                                                                 variant="ghost"
-                                                                className="h-7 w-7 p-0 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-full"
+                                                                className="h-9 w-9 p-0 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-full"
                                                                 onClick={() => handleDeleteOrder(order.id)}
                                                                 disabled={actionOrderId === order.id}
                                                             >
-                                                                {actionOrderId === order.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={14} />}
+                                                                {actionOrderId === order.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={18} />}
                                                             </Button>
                                                         </div>
                                                     </div>

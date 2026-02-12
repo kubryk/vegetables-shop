@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getPaginatedProducts, getProducts, addProduct, updateProduct, toggleProductStatus, syncProducts, deleteProduct, exportProductsToSheets, getSheetName } from '@/app/actions/products';
+import { getPaginatedProducts, getProducts, addProduct, updateProduct, toggleProductStatus, syncProducts, deleteProduct, exportProductsToSheets, getSheetName, updateProductMetadata } from '@/app/actions/products';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Plus, RefreshCw, Save, Trash2, LayoutDashboard, Utensils, Search, Package, Image as ImageIcon, Pencil, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Save, Trash2, LayoutDashboard, Utensils, Search, Package, Image as ImageIcon, Pencil, Download, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
@@ -33,187 +33,304 @@ const ProductForm = ({
     setShowAddForm,
     setEditingId,
     isInline = false
-}: ProductFormProps) => (
-    <form onSubmit={handleAddProduct} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-12 xl:col-span-7 space-y-4">
-            <div className={cn("bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700 space-y-4", isInline && "p-3")}>
-                <h3 className="font-semibold text-base flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
-                    <Package className="h-4 w-4 text-primary" />
-                    Інформація про товар
-                </h3>
+}: ProductFormProps) => {
+    if (editingId) {
+        // Semantic separation for Editing Mode (Only Metadata)
+        return (
+            <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-20 md:pb-0">
+                {/* Left Column: Image */}
                 <div className="space-y-4">
-                    <div className="space-y-2">
-                        <Label htmlFor="name" className="text-[10px] font-bold uppercase text-zinc-400">Назва товару *</Label>
-                        <Input
-                            id="name"
-                            placeholder="напр. Помідори Червоні"
-                            value={newProduct.name}
-                            onChange={e => setNewProduct({ ...newProduct, name: e.target.value })}
-                            className="rounded-lg h-10 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 focus:border-primary"
-                        />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700 space-y-4">
+                        <h3 className="font-semibold text-base flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                            <Package className="h-4 w-4 text-primary" />
+                            Фото
+                        </h3>
                         <div className="space-y-2">
-                            <Label htmlFor="category" className="text-[10px] font-bold uppercase text-zinc-400">Категорія *</Label>
-                            <Input
-                                id="category"
-                                placeholder="напр. Овочі"
-                                value={newProduct.category}
-                                onChange={e => setNewProduct({ ...newProduct, category: e.target.value })}
-                                className="rounded-lg h-10 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="image" className="text-[10px] font-bold uppercase text-zinc-400">Фото</Label>
-                            <div className="flex gap-2">
+                            <Label htmlFor="image" className="text-xs font-bold uppercase text-zinc-400">URL</Label>
+                            <div className="flex flex-col gap-3">
                                 <Input
                                     id="image"
                                     placeholder="https://..."
                                     value={newProduct.image}
                                     onChange={e => setNewProduct({ ...newProduct, image: e.target.value })}
-                                    className="rounded-lg h-10 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                                    className="rounded-lg h-10 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 dark:text-zinc-100"
                                 />
-                                {newProduct.image && (
-                                    <div className="h-10 w-10 shrink-0 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700">
-                                        <img src={newProduct.image} alt="Preview" className="h-full w-full object-cover" />
+                                {newProduct.image ? (
+                                    <div className="h-32 w-full rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 flex items-center justify-center">
+                                        <img src={newProduct.image} alt="Preview" className="w-full h-full object-contain p-2" />
+                                    </div>
+                                ) : (
+                                    <div className="h-32 w-full rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 flex flex-col items-center justify-center text-zinc-400 gap-2">
+                                        <ImageIcon size={24} />
+                                        <span className="text-xs">Немає фото</span>
                                     </div>
                                 )}
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <div className="lg:col-span-12 xl:col-span-5 space-y-4">
-            <div className={cn("bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700 h-full flex flex-col", isInline && "p-3")}>
-                <h3 className="font-semibold text-base flex items-center gap-2 text-zinc-900 dark:text-zinc-100 mb-4">
-                    <Utensils className="h-4 w-4 text-green-600" />
-                    Ціна та Пакування
-                </h3>
-                <div className="space-y-4 flex-1">
-                    <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-                        <div className={cn("grid gap-4", newProduct.unit === 'pcs' ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2")}>
+                {/* Right Column: Settings */}
+                <div className="space-y-4 flex flex-col">
+                    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700 space-y-6 flex-1">
+                        <h3 className="font-semibold text-base flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                            <Utensils className="h-4 w-4 text-green-600" />
+                            Відображення
+                        </h3>
+
+                        <div className="space-y-4">
                             <div className="space-y-2">
-                                <Label className="text-[10px] font-bold uppercase text-zinc-400">Од. вим.</Label>
-                                <Select value={newProduct.unit} onValueChange={(v) => setNewProduct({ ...newProduct, unit: v })}>
+                                <Label className="text-xs font-bold uppercase text-zinc-400">Позиція на сторінці</Label>
+                                <Input
+                                    type="number"
+                                    value={newProduct.position}
+                                    onChange={e => setNewProduct({ ...newProduct, position: parseInt(e.target.value) || 0 })}
+                                    className="rounded-lg h-10 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 font-mono font-bold text-lg dark:text-zinc-100"
+                                />
+                                <p className="text-[10px] text-zinc-400">
+                                    Чим більше число, тим вище товар на головній сторінці (за замовчуванням 0).
+                                </p>
+                            </div>
+
+                            <Separator />
+
+                            <div className="space-y-2">
+                                <Label className="text-xs font-bold uppercase text-zinc-400">Відображення у звіті</Label>
+                                <Select
+                                    value={newProduct.agregationResult}
+                                    onValueChange={(v) => setNewProduct({ ...newProduct, agregationResult: v })}
+                                >
                                     <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
-                                    <SelectContent><SelectItem value="kg">кг</SelectItem><SelectItem value="pcs">шт</SelectItem></SelectContent>
+                                    <SelectContent>
+                                        <SelectItem value="weight">Вага</SelectItem>
+                                        <SelectItem value="cardboard">Ящики</SelectItem>
+                                    </SelectContent>
                                 </Select>
-                            </div>
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-bold uppercase text-zinc-400">Ціна за {newProduct.unit === 'kg' ? 'кг' : 'шт'}</Label>
-                                <div className="relative">
-                                    <Input
-                                        type="number" step="0.01" value={newProduct.pricePerUnit}
-                                        onChange={e => {
-                                            const p = parseFloat(e.target.value) || 0;
-                                            const w = parseFloat(newProduct.netWeight.toString()) || 0;
-                                            const c = parseFloat(newProduct.unitPerCardboard.toString()) || 0;
-                                            let pc = newProduct.pricePerCardboard;
-                                            if (newProduct.unit === 'kg') pc = w > 0 ? (p * w).toFixed(2) : pc;
-                                            else if (newProduct.unit === 'pcs') pc = c > 0 ? (p * c).toFixed(2) : pc;
-                                            setNewProduct({ ...newProduct, pricePerUnit: e.target.value, pricePerCardboard: pc });
-                                        }}
-                                        className="rounded-lg h-10 pl-7 font-mono font-bold text-green-700 bg-zinc-50/50"
-                                    />
-                                    <span className="absolute left-2.5 top-2.5 text-xs font-bold text-green-600/50">€</span>
-                                </div>
-                            </div>
-                            {newProduct.unit === 'pcs' && (
-                                <div className="space-y-2">
-                                    <Label className="text-[10px] font-bold uppercase text-zinc-400">Шт/Уп</Label>
-                                    <Input
-                                        type="number" value={newProduct.unitPerCardboard}
-                                        onChange={e => {
-                                            const c = parseFloat(e.target.value) || 0;
-                                            const pu = parseFloat(newProduct.pricePerUnit.toString()) || 0;
-                                            const pc = c > 0 ? (pu * c).toFixed(2) : newProduct.pricePerCardboard;
-                                            setNewProduct({ ...newProduct, unitPerCardboard: e.target.value, pricePerCardboard: pc });
-                                        }}
-                                        className="rounded-lg h-10"
-                                    />
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-bold uppercase text-zinc-400">Вага Уп (кг)</Label>
-                                <div className="relative">
-                                    <Input
-                                        type="number" step="0.01" value={newProduct.netWeight}
-                                        onChange={e => {
-                                            const w = parseFloat(e.target.value) || 0;
-                                            const pu = parseFloat(newProduct.pricePerUnit.toString()) || 0;
-                                            let pc = newProduct.pricePerCardboard;
-                                            if (newProduct.unit === 'kg') pc = w > 0 ? (pu * w).toFixed(2) : pc;
-                                            setNewProduct({ ...newProduct, netWeight: e.target.value, pricePerCardboard: pc });
-                                        }}
-                                        className="rounded-lg h-10 pr-7"
-                                    />
-                                    <span className="absolute right-2.5 top-2.5 text-[10px] text-zinc-400">кг</span>
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <Label className="text-[10px] font-bold uppercase text-zinc-400">Ціна Уп</Label>
-                                <div className="relative">
-                                    <Input
-                                        type="number" step="0.01" value={newProduct.pricePerCardboard}
-                                        onChange={e => setNewProduct({ ...newProduct, pricePerCardboard: e.target.value })}
-                                        className="rounded-lg h-10 pl-7 font-mono font-bold bg-amber-50/20"
-                                    />
-                                    <span className="absolute left-2.5 top-2.5 text-xs font-bold text-amber-600/50">€</span>
-                                </div>
+                                <p className="text-[10px] text-zinc-400">
+                                    Визначає, як цей товар буде відображатися у зведеному звіті.
+                                </p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                    <div className="fixed bottom-0 left-0 right-0 p-4 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 md:relative md:bottom-auto md:left-auto md:right-auto md:p-0 md:bg-transparent md:border-t-0 flex flex-row items-center gap-3 z-50">
+                        <Button type="submit" size="sm" className="flex-1 md:flex-none px-8 rounded-full font-bold shadow-lg h-12 md:h-10 text-base md:text-sm">
+                            <Save className="mr-2 h-4 w-4" />
+                            Зберегти
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                                resetForm();
+                                setShowAddForm(false);
+                                setEditingId(null);
+                            }}
+                            className="flex-1 md:flex-none text-zinc-400 rounded-full h-12 md:h-10 text-base md:text-sm"
+                        >
+                            Скасувати
+                        </Button>
+                    </div>
+                </div>
+            </form>
+        );
+    }
+
+    return (
+        <form onSubmit={handleAddProduct} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-12 xl:col-span-7 space-y-4">
+                <div className={cn("bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700 space-y-4", isInline && "p-3")}>
+                    <h3 className="font-semibold text-base flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                        <Package className="h-4 w-4 text-primary" />
+                        Інформація про товар
+                    </h3>
+                    <div className="space-y-4">
                         <div className="space-y-2">
-                            <Label className="text-[10px] font-bold uppercase text-zinc-400">Тип агрегації у звіті</Label>
-                            <Select
-                                value={newProduct.agregationResult}
-                                onValueChange={(v) => setNewProduct({ ...newProduct, agregationResult: v })}
-                            >
-                                <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="weight">Вага (Total Weight)</SelectItem>
-                                    <SelectItem value="cardboard">Штуки (Pcs / Boxes)</SelectItem>
-                                </SelectContent>
-                            </Select>
-                            <p className="text-[10px] text-zinc-400">
-                                Визначає, як цей товар буде відображатися у зведеному звіті: як загальна вага або як кількість ящиків/штук.
-                            </p>
+                            <Label htmlFor="name" className="text-xs font-bold uppercase text-zinc-400">Назва товару *</Label>
+                            <Input
+                                id="name"
+                                placeholder="напр. Помідори Червоні"
+                                value={newProduct.name}
+                                onChange={e => setNewProduct({ ...newProduct, name: e.target.value })}
+                                className="rounded-lg h-10 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 focus:border-primary dark:text-zinc-100"
+                            />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="category" className="text-xs font-bold uppercase text-zinc-400">Категорія *</Label>
+                                <Input
+                                    id="category"
+                                    placeholder="напр. Овочі"
+                                    value={newProduct.category}
+                                    onChange={e => setNewProduct({ ...newProduct, category: e.target.value })}
+                                    className="rounded-lg h-10 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 dark:text-zinc-100"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="image" className="text-xs font-bold uppercase text-zinc-400">Фото</Label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        id="image"
+                                        placeholder="https://..."
+                                        value={newProduct.image}
+                                        onChange={e => setNewProduct({ ...newProduct, image: e.target.value })}
+                                        className="rounded-lg h-10 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 dark:text-zinc-100"
+                                    />
+                                    {newProduct.image && (
+                                        <div className="h-10 w-10 shrink-0 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700">
+                                            <img src={newProduct.image} alt="Preview" className="h-full w-full object-cover" />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <div className="flex flex-col sm:flex-row items-center gap-3 pt-4 lg:col-span-12">
-            <Button type="submit" size="sm" className="w-full sm:w-auto px-8 rounded-full font-bold shadow-lg">
-                <Save className="mr-2 h-4 w-4" />
-                {editingId ? 'Зберегти зміни' : 'Додати товар'}
-            </Button>
-            <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                    resetForm();
-                    setShowAddForm(false);
-                    setEditingId(null);
-                }}
-                className="w-full sm:w-auto text-zinc-400 rounded-full"
-            >
-                Скасувати
-            </Button>
-        </div>
-    </form>
-);
+            <div className="lg:col-span-12 xl:col-span-5 space-y-4">
+                <div className={cn("bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700 h-full flex flex-col", isInline && "p-3")}>
+                    <h3 className="font-semibold text-base flex items-center gap-2 text-zinc-900 dark:text-zinc-100 mb-4">
+                        <Utensils className="h-4 w-4 text-green-600" />
+                        Ціна та Пакування
+                    </h3>
+                    <div className="space-y-4 flex-1">
+                        <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                            <div className={cn("grid gap-4", newProduct.unit === 'pcs' ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2")}>
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold uppercase text-zinc-400">Од. вим.</Label>
+                                    <Select value={newProduct.unit} onValueChange={(v) => setNewProduct({ ...newProduct, unit: v })}>
+                                        <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
+                                        <SelectContent><SelectItem value="kg">кг</SelectItem><SelectItem value="pcs">шт</SelectItem></SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold uppercase text-zinc-400">Ціна за {newProduct.unit === 'kg' ? 'кг' : 'шт'}</Label>
+                                    <div className="relative">
+                                        <Input
+                                            type="number" step="0.01" value={newProduct.pricePerUnit}
+                                            onChange={e => {
+                                                const p = parseFloat(e.target.value) || 0;
+                                                const w = parseFloat(newProduct.netWeight.toString()) || 0;
+                                                const c = parseFloat(newProduct.unitPerCardboard.toString()) || 0;
+                                                let pc = newProduct.pricePerCardboard;
+                                                if (newProduct.unit === 'kg') pc = w > 0 ? (p * w).toFixed(2) : pc;
+                                                else if (newProduct.unit === 'pcs') pc = c > 0 ? (p * c).toFixed(2) : pc;
+                                                setNewProduct({ ...newProduct, pricePerUnit: e.target.value, pricePerCardboard: pc });
+                                            }}
+                                            className="rounded-lg h-10 pl-7 font-mono font-bold text-green-700 dark:text-green-400 bg-zinc-50/50 dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800"
+                                        />
+                                        <span className="absolute left-2.5 top-2.5 text-xs font-bold text-green-600/50">€</span>
+                                    </div>
+                                </div>
+                                {newProduct.unit === 'pcs' && (
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold uppercase text-zinc-400">Шт/Уп</Label>
+                                        <Input
+                                            type="number" value={newProduct.unitPerCardboard}
+                                            onChange={e => {
+                                                const c = parseFloat(e.target.value) || 0;
+                                                const pu = parseFloat(newProduct.pricePerUnit.toString()) || 0;
+                                                const pc = c > 0 ? (pu * c).toFixed(2) : newProduct.pricePerCardboard;
+                                                setNewProduct({ ...newProduct, unitPerCardboard: e.target.value, pricePerCardboard: pc });
+                                            }}
+                                            className="rounded-lg h-10 dark:text-zinc-100"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold uppercase text-zinc-400">Вага Уп (кг)</Label>
+                                    <div className="relative">
+                                        <Input
+                                            type="number" step="0.01" value={newProduct.netWeight}
+                                            onChange={e => {
+                                                const w = parseFloat(e.target.value) || 0;
+                                                const pu = parseFloat(newProduct.pricePerUnit.toString()) || 0;
+                                                let pc = newProduct.pricePerCardboard;
+                                                if (newProduct.unit === 'kg') pc = w > 0 ? (pu * w).toFixed(2) : pc;
+                                                setNewProduct({ ...newProduct, netWeight: e.target.value, pricePerCardboard: pc });
+                                            }}
+                                            className="rounded-lg h-10 pr-7 dark:text-zinc-100"
+                                        />
+                                        <span className="absolute right-2.5 top-2.5 text-[10px] text-zinc-400">кг</span>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold uppercase text-zinc-400">Ціна Уп</Label>
+                                    <div className="relative">
+                                        <Input
+                                            type="number" step="0.01" value={newProduct.pricePerCardboard}
+                                            onChange={e => setNewProduct({ ...newProduct, pricePerCardboard: e.target.value })}
+                                            className="rounded-lg h-10 pl-7 font-mono font-bold bg-amber-50/20 dark:bg-amber-900/10 text-zinc-900 dark:text-orange-100 border-zinc-200 dark:border-zinc-800"
+                                        />
+                                        <span className="absolute left-2.5 top-2.5 text-xs font-bold text-amber-600/50">€</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
+                            <div className="space-y-2">
+                                <Label className="text-xs font-bold uppercase text-zinc-400">Тип агрегації у звіті</Label>
+                                <Select
+                                    value={newProduct.agregationResult}
+                                    onValueChange={(v) => setNewProduct({ ...newProduct, agregationResult: v })}
+                                >
+                                    <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="weight">Вага (Total Weight)</SelectItem>
+                                        <SelectItem value="cardboard">Штуки (Pcs / Boxes)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-[10px] text-zinc-400">
+                                    Визначає, як цей товар буде відображатися у зведеному звіті: як загальна вага або як кількість ящиків/штук.
+                                </p>
+                            </div>
+                            <div className="space-y-2 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                                <Label className="text-xs font-bold uppercase text-zinc-400">Сортування (Позиція)</Label>
+                                <Input
+                                    type="number"
+                                    value={newProduct.position}
+                                    onChange={e => setNewProduct({ ...newProduct, position: parseInt(e.target.value) || 0 })}
+                                    className="rounded-lg h-10 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 dark:text-zinc-100"
+                                />
+                                <p className="text-[10px] text-zinc-400">
+                                    Чим більше число, тим вище товар у списку (за замовчуванням 0).
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-4 lg:col-span-12">
+                <Button type="submit" size="sm" className="w-full sm:w-auto px-8 rounded-full font-bold shadow-lg">
+                    <Save className="mr-2 h-4 w-4" />
+                    {editingId ? 'Зберегти зміни' : 'Додати товар'}
+                </Button>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                        resetForm();
+                        setShowAddForm(false);
+                        setEditingId(null);
+                    }}
+                    className="w-full sm:w-auto text-zinc-400 rounded-full"
+                >
+                    Скасувати
+                </Button>
+            </div>
+        </form>
+    );
+}
 
 export default function ProductsPage() {
     const [products, setProducts] = useState<any[]>([]);
@@ -244,6 +361,7 @@ export default function ProductsPage() {
         currency: 'EUR',
         image: '',
         agregationResult: 'weight',
+        position: 0,
         active: true,
     });
 
@@ -289,7 +407,7 @@ export default function ProductsPage() {
         setIsSyncing(true);
         const result = await syncProducts();
         if (result.success) {
-            toast.success(`Успішно синхронізовано ${result.count} товарів з Google Sheets!`);
+            toast.success('Успішно синхронізовано!');
             loadProducts();
         } else {
             toast.error('Помилка синхронізації: ' + result.error);
@@ -326,9 +444,25 @@ export default function ProductsPage() {
             unitPerCardboard: parseFloat(newProduct.unitPerCardboard.toString()) || 0,
         };
 
-        const result = editingId
-            ? await updateProduct(editingId, submissionData)
-            : await addProduct(submissionData);
+        let result;
+
+        if (editingId) {
+            // Only update local metadata
+            const metaResult = await updateProductMetadata(editingId, {
+                image: newProduct.image,
+                agregationResult: newProduct.agregationResult,
+                position: newProduct.position
+            });
+
+            if (metaResult.success) {
+                result = { success: true };
+                toast.success('Локальні налаштування оновлено');
+            } else {
+                result = metaResult;
+            }
+        } else {
+            result = await addProduct(submissionData);
+        }
 
         if (result.success) {
             setShowAddForm(false);
@@ -344,35 +478,18 @@ export default function ProductsPage() {
                 currency: 'EUR',
                 image: '',
                 agregationResult: 'weight',
+                position: 0,
                 active: true,
             });
             loadProducts();
         } else {
-            toast.error('Помилка: ' + result.error);
+            toast.error('Помилка: ' + (result.error || 'Невідома помилка'));
         }
     }
 
-    async function handleToggleStatus(id: string, currentStatus: boolean) {
-        const result = await toggleProductStatus(id, !currentStatus);
-        if (!result.success) {
-            toast.error('Помилка при зміні статусу: ' + result.error);
-        } else {
-            toast.success('Статус оновлено');
-        }
-        loadProducts();
-    }
 
-    async function handleDeleteProduct(id: string, name: string) {
-        if (confirm(`Ви впевнені, що хочете видалити ${name}?`)) {
-            const result = await deleteProduct(id);
-            if (result.success) {
-                toast.success('Товар видалено');
-                loadProducts();
-            } else {
-                toast.error('Помилка: ' + result.error);
-            }
-        }
-    }
+
+
 
     function resetForm() {
         setEditingId(null);
@@ -387,6 +504,7 @@ export default function ProductsPage() {
             currency: 'EUR',
             image: '',
             agregationResult: 'weight',
+            position: 0,
             active: true,
         });
     }
@@ -419,6 +537,7 @@ export default function ProductsPage() {
             currency: product.currency || 'EUR',
             image: product.image || '',
             agregationResult: product.agregationResult || '',
+            position: product.position || 0,
             active: product.active,
         });
     }
@@ -443,21 +562,9 @@ export default function ProductsPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-3xl font-black tracking-tight text-zinc-900 dark:text-zinc-50">Бібліотека товарів</h2>
-                    <p className="text-[10px] text-zinc-500 font-medium mt-1 flex items-center gap-1">
-                        <RefreshCw size={10} className="text-green-600 animate-spin-slow" />
-                        Автоматична синхронізація з Google Sheets (лист: {sheetName})
-                    </p>
+
                 </div>
-                <div className="flex items-center gap-2">
-                    <Button
-                        size="sm"
-                        onClick={handleAddButtonClick}
-                        className="rounded-full bg-primary hover:bg-primary/90 text-white shadow-md hover:shadow-lg transition-all h-9 px-4 sm:h-10 sm:px-6"
-                    >
-                        <Plus className="mr-2 h-4 w-4" />
-                        Додати товар
-                    </Button>
-                </div>
+
             </div>
 
             {/* Stats / Quick Info */}
@@ -506,7 +613,7 @@ export default function ProductsPage() {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                         <Input
                             placeholder="Пошук товарів..."
-                            className="pl-10 rounded-full h-10 bg-zinc-50 dark:bg-zinc-800 border-none"
+                            className="pl-10 rounded-full h-10 bg-zinc-50 dark:bg-zinc-800 border-none dark:text-zinc-100"
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
                         />
@@ -566,34 +673,45 @@ export default function ProductsPage() {
                                                         )}
                                                     </div>
                                                 </div>
-                                                <div className="flex flex-col items-end gap-2">
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); handleToggleStatus(p.id, p.active); }}
-                                                        className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all shadow-sm cursor-pointer ${p.active
-                                                            ? 'bg-green-100 text-green-700'
-                                                            : 'bg-zinc-100 text-zinc-500'
-                                                            }`}
-                                                    >
-                                                        {p.active ? 'Активний' : 'Прихований'}
-                                                    </button>
-                                                </div>
-                                            </div>
 
-                                            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-50 dark:border-zinc-800/50">
-                                                <div>
-                                                    <p className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider mb-1">Ціна за {p.unit}</p>
-                                                    <p className="font-mono font-bold text-primary text-base">
-                                                        {new Intl.NumberFormat('de-DE', { style: 'currency', currency: p.currency || 'EUR' }).format(p.pricePerUnit)}
-                                                    </p>
-                                                </div>
-                                                <div className="text-right">
-                                                    <p className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider mb-1">За упаковку</p>
-                                                    <p className="font-mono font-bold text-zinc-600 dark:text-zinc-400">
-                                                        {new Intl.NumberFormat('de-DE', { style: 'currency', currency: p.currency || 'EUR' }).format(p.pricePerCardboard || 0)}
-                                                    </p>
+
+                                                <div className="flex flex-col items-end gap-2">
+                                                    {(p as any).externalUrl && (
+                                                        <a
+                                                            href={(p as any).externalUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="p-1.5 text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 dark:text-blue-400 dark:hover:text-blue-300 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 rounded-lg transition-colors"
+                                                            title="Відкрити у Fakturownia"
+                                                        >
+                                                            <ExternalLink size={16} />
+                                                        </a>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
+
+                                        <div className="grid grid-cols-2 gap-2 pt-2 px-3 pb-3 border-t border-zinc-50 dark:border-zinc-800/50">
+                                            <div>
+                                                <p className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider mb-1">Ціна за {p.unit}</p>
+                                                <p className="font-mono font-bold text-primary text-base flex flex-col items-start leading-none gap-0.5">
+                                                    {new Intl.NumberFormat('de-DE', { style: 'currency', currency: p.currency || 'EUR' }).format(p.pricePerUnit)}
+                                                </p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider mb-1">За упаковку</p>
+                                                <div className="flex flex-col items-end gap-0.5">
+                                                    <p className="font-mono font-bold text-zinc-600 dark:text-zinc-400 text-base leading-none">
+                                                        {new Intl.NumberFormat('de-DE', { style: 'currency', currency: p.currency || 'EUR' }).format(p.pricePerCardboard || 0)}
+                                                    </p>
+                                                    <span className="text-[10px] text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
+                                                        {p.unit === 'kg' ? `${p.netWeight} кг` : `${p.unitPerCardboard} шт`}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
 
                                         {editingId === p.id && (
                                             <div className="p-4 border-t-2 border-primary/10 bg-zinc-50/50 dark:bg-zinc-800/30 animate-in slide-in-from-top-2 duration-300">
@@ -619,10 +737,9 @@ export default function ProductsPage() {
                                     <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-[10px] uppercase font-bold text-zinc-500 tracking-wider">
                                         <tr>
                                             <th className="px-6 py-4">Товар / Категорія</th>
-                                            <th className="px-6 py-4 text-center">Пакування</th>
-                                            <th className="px-6 py-4">Ціна (Од / Уп)</th>
-                                            <th className="px-6 py-4">Статус</th>
-                                            <th className="px-6 py-4 text-right">Дії</th>
+                                            <th className="px-6 py-4 text-right">Пакування</th>
+                                            <th className="px-6 py-4 text-right">Ціна (кг / Уп)</th>
+
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -654,24 +771,37 @@ export default function ProductsPage() {
                                                                     )}
                                                                 </div>
                                                                 <div className="flex items-center gap-2 mt-0.5">
-                                                                    <Badge variant="secondary" className="px-1.5 py-0 h-4 text-[10px] rounded-sm font-medium bg-zinc-100 text-zinc-500 group-hover:bg-white transition-colors">
+                                                                    <Badge variant="secondary" className="px-1.5 py-0 h-4 text-[10px] rounded-sm font-medium bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 group-hover:bg-white dark:group-hover:bg-zinc-700 transition-colors">
                                                                         {p.category}
                                                                     </Badge>
                                                                     <span className="text-[10px] text-zinc-300 font-mono">#{p.id.slice(0, 8)}</span>
+                                                                    {(p as any).externalUrl && (
+                                                                        <a
+                                                                            href={(p as any).externalUrl}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            className="ml-2 p-1 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 rounded-md transition-colors"
+                                                                            title="Відкрити у Fakturownia"
+                                                                        >
+                                                                            <ExternalLink size={14} />
+                                                                        </a>
+                                                                    )}
+
                                                                 </div>
                                                             </div>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-4 text-center">
-                                                        <div className="inline-flex flex-col items-center">
+                                                    <td className="px-6 py-4 text-right">
+                                                        <div className="inline-flex flex-col items-end">
                                                             <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
                                                                 {p.unit === 'kg' ? `${p.netWeight} кг` : `${p.unitPerCardboard} шт. ${p.netWeight > 0 ? `(${p.netWeight} кг)` : ''}`}
                                                             </span>
                                                             <span className="text-[10px] text-zinc-400 uppercase tracking-tighter">в упаковці</span>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex flex-col">
+                                                    <td className="px-6 py-4 text-right">
+                                                        <div className="flex flex-col items-end">
                                                             <span className="font-mono font-bold text-primary">
                                                                 {new Intl.NumberFormat('de-DE', { style: 'currency', currency: p.currency || 'EUR' }).format(p.pricePerUnit)}
                                                             </span>
@@ -680,46 +810,27 @@ export default function ProductsPage() {
                                                             </span>
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-4">
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); handleToggleStatus(p.id, p.active); }}
-                                                            className={`px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm cursor-pointer ${p.active
-                                                                ? 'bg-green-50 text-green-600 hover:bg-green-100 border border-green-100'
-                                                                : 'bg-zinc-50 text-zinc-400 hover:bg-zinc-100 border border-zinc-100'
-                                                                }`}
-                                                        >
-                                                            {p.active ? 'Активний' : 'Прихований'}
-                                                        </button>
-                                                    </td>
-                                                    <td className="px-6 py-4 text-right">
-                                                        <div className="flex items-center justify-end gap-1">
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                className={cn("h-8 w-8 rounded-full transition-colors", editingId === p.id ? "bg-primary text-white" : "hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20")}
-                                                                onClick={(e) => { e.stopPropagation(); startEdit(p); }}
-                                                            >
-                                                                <Pencil size={14} />
-                                                            </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                className="h-8 w-8 rounded-full text-red-400 hover:bg-red-50 hover:text-red-600"
-                                                                onClick={(e) => { e.stopPropagation(); handleDeleteProduct(p.id, p.name); }}
-                                                            >
-                                                                <Trash2 size={16} />
-                                                            </Button>
-                                                        </div>
-                                                    </td>
+
+
                                                 </tr>
                                                 {editingId === p.id && (
                                                     <tr>
-                                                        <td colSpan={5} className="px-6 py-8 bg-zinc-50/50 dark:bg-zinc-800/30 border-b-2 border-primary/20">
+                                                        <td colSpan={3} className="px-6 py-8 bg-zinc-50/50 dark:bg-zinc-800/30 border-b-2 border-primary/20">
                                                             <div className="max-w-5xl mx-auto animate-in fade-in slide-in-from-top-2 duration-300">
                                                                 <div className="flex items-center justify-between mb-6">
                                                                     <h3 className="text-lg font-black flex items-center gap-2">
-                                                                        <Pencil className="text-primary h-5 w-5" />
                                                                         Редагування: <span className="text-zinc-500">{p.name}</span>
+                                                                        {(p as any).externalUrl && (
+                                                                            <a
+                                                                                href={(p as any).externalUrl}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                className="ml-2 p-1.5 text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 rounded-lg transition-colors"
+                                                                                title="Відкрити у Fakturownia"
+                                                                            >
+                                                                                <ExternalLink size={18} />
+                                                                            </a>
+                                                                        )}
                                                                     </h3>
                                                                 </div>
                                                                 <ProductForm
@@ -742,38 +853,41 @@ export default function ProductsPage() {
                                 </table>
                             </div>
                         </div>
-                    )}
-                </CardContent>
-            </Card>
+                    )
+                    }
+                </CardContent >
+            </Card >
 
             {/* Pagination Controls */}
-            {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-4 pb-8">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => loadProducts(currentPage - 1)}
-                        disabled={currentPage <= 1 || isLoading}
-                        className="rounded-full shadow-sm"
-                    >
-                        <ChevronLeft className="h-4 w-4 mr-1" />
-                        Назад
-                    </Button>
-                    <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                        Сторінка {currentPage} з {totalPages}
-                    </span>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => loadProducts(currentPage + 1)}
-                        disabled={currentPage >= totalPages || isLoading}
-                        className="rounded-full shadow-sm"
-                    >
-                        Вперед
-                        <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                </div>
-            )}
-        </div>
+            {
+                totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-4 pb-8">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => loadProducts(currentPage - 1)}
+                            disabled={currentPage <= 1 || isLoading}
+                            className="rounded-full shadow-sm"
+                        >
+                            <ChevronLeft className="h-4 w-4 mr-1" />
+                            Назад
+                        </Button>
+                        <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
+                            Сторінка {currentPage} з {totalPages}
+                        </span>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => loadProducts(currentPage + 1)}
+                            disabled={currentPage >= totalPages || isLoading}
+                            className="rounded-full shadow-sm"
+                        >
+                            Вперед
+                            <ChevronRight className="h-4 w-4 ml-1" />
+                        </Button>
+                    </div>
+                )
+            }
+        </div >
     );
 }

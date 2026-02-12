@@ -29,3 +29,11 @@ export const orders = pgTable("orders", {
     orderDate: timestamp("order_date").defaultNow(),
     createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const productMetadata = pgTable("product_metadata", {
+    id: text("id").primaryKey(), // Matches Fakturownia Product ID
+    image: text("image"),
+    agregationResult: text("agregation_result").default("cardboard"),
+    position: integer("position").default(0),
+    updatedAt: timestamp("updated_at").defaultNow(),
+});

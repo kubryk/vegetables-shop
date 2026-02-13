@@ -140,7 +140,7 @@ export default function OrdersPage() {
                                         type="date"
                                         value={startDate}
                                         onChange={(e) => setStartDate(e.target.value)}
-                                        className="pl-9 h-9 text-sm w-full"
+                                        className="pl-9 h-9 text-sm w-full dark:text-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
                                     />
                                 </div>
                             </div>
@@ -153,7 +153,7 @@ export default function OrdersPage() {
                                         type="date"
                                         value={endDate}
                                         onChange={(e) => setEndDate(e.target.value)}
-                                        className="pl-9 h-9 text-sm w-full"
+                                        className="pl-9 h-9 text-sm w-full dark:text-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
                                     />
                                 </div>
                             </div>
@@ -178,7 +178,7 @@ export default function OrdersPage() {
             <Card className="border-none shadow-sm bg-white dark:bg-zinc-900 overflow-hidden">
                 <CardHeader className="border-b border-zinc-100 dark:border-zinc-800 py-4">
                     <div className="flex items-center justify-between">
-                        <CardTitle className="text-xl">Список замовлень</CardTitle>
+                        <CardTitle className="text-xl text-zinc-900 dark:text-zinc-50">Список замовлень</CardTitle>
                         <Badge variant="secondary" className="bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
                             Знайдено: {totalOrders}
                         </Badge>
@@ -188,21 +188,21 @@ export default function OrdersPage() {
                     {isLoading ? (
                         <div className="flex flex-col items-center justify-center py-20 gap-4">
                             <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                            <p className="text-zinc-500 font-medium">Завантаження замовлень...</p>
+                            <p className="text-zinc-500 dark:text-zinc-400 font-medium">Завантаження замовлень...</p>
                         </div>
                     ) : orders.length === 0 ? (
                         <div className="text-center py-20 px-6">
                             <div className="h-16 w-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto text-zinc-400">
                                 <ShoppingBag size={32} />
                             </div>
-                            <p className="text-zinc-500">Немає замовлень</p>
+                            <p className="text-zinc-500 dark:text-zinc-400">Немає замовлень</p>
                         </div>
                     ) : (
                         <>
                             {/* Desktop View (Table) */}
                             <div className="hidden md:block overflow-x-auto">
                                 <table className="w-full text-left">
-                                    <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-xs uppercase font-bold text-zinc-500">
+                                    <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-xs uppercase font-bold text-zinc-500 dark:text-zinc-400">
                                         <tr>
                                             <th className="px-4 sm:px-6 py-4 hidden sm:table-cell">Номер</th>
                                             <th className="px-4 sm:px-6 py-4">Дата</th>
@@ -234,12 +234,12 @@ export default function OrdersPage() {
                                                             </div>
                                                         </td>
                                                         <td className="px-4 sm:px-6 py-4">
-                                                            <div className="flex flex-col text-xs text-zinc-500">
+                                                            <div className="flex flex-col text-xs text-zinc-500 dark:text-zinc-400">
                                                                 <div className="flex items-center gap-1.5">
                                                                     <Calendar size={12} />
                                                                     {new Date(order.orderDate).toLocaleDateString('uk-UA', { timeZone: 'UTC' })}
                                                                 </div>
-                                                                <div className="flex items-center gap-1.5 ml-[18px] text-[10px] text-zinc-400">
+                                                                <div className="flex items-center gap-1.5 ml-[18px] text-[10px] text-zinc-400 dark:text-zinc-500">
                                                                     <Clock size={10} />
                                                                     {new Date(order.orderDate).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
                                                                 </div>
@@ -253,7 +253,7 @@ export default function OrdersPage() {
                                                         </td>
                                                         <td className="px-4 sm:px-6 py-4 hidden lg:table-cell">
                                                             <div className="flex flex-col gap-1">
-                                                                <Badge variant="outline" className="w-fit text-[9px] bg-zinc-50 dark:bg-zinc-800 border-zinc-200">
+                                                                <Badge variant="outline" className="w-fit text-[9px] bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 dark:text-zinc-100">
                                                                     {items.length} {items.length === 1 ? 'позиція' : 'позицій'}
                                                                 </Badge>
                                                             </div>
@@ -282,10 +282,10 @@ export default function OrdersPage() {
                                                                         </div>
                                                                     </SelectTrigger>
                                                                     <SelectContent className="rounded-xl shadow-xl border-zinc-100 dark:border-zinc-800">
-                                                                        <SelectItem value="processing" className="text-blue-600 font-medium cursor-pointer text-xs sm:text-sm">
+                                                                        <SelectItem value="processing" className="text-blue-600 dark:text-blue-400 font-medium cursor-pointer text-xs sm:text-sm">
                                                                             В обробці
                                                                         </SelectItem>
-                                                                        <SelectItem value="completed" className="text-green-600 font-medium cursor-pointer text-xs sm:text-sm">
+                                                                        <SelectItem value="completed" className="text-green-600 dark:text-green-400 font-medium cursor-pointer text-xs sm:text-sm">
                                                                             Оброблено
                                                                         </SelectItem>
                                                                     </SelectContent>
@@ -354,7 +354,7 @@ export default function OrdersPage() {
                                                     <div className="flex items-center justify-between">
                                                         <div className="flex items-center gap-2">
                                                             <User size={14} className="text-zinc-400" />
-                                                            <span className="text-sm font-medium">{order.customerName}</span>
+                                                            <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{order.customerName}</span>
                                                         </div>
                                                         <span className="font-mono font-bold text-primary">
                                                             {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR' }).format(order.totalPrice)}
@@ -362,7 +362,7 @@ export default function OrdersPage() {
                                                     </div>
 
                                                     <div className="flex items-center justify-between pt-2 border-t border-zinc-50 dark:border-zinc-800">
-                                                        <div className="text-xs text-zinc-500">
+                                                        <div className="text-xs text-zinc-500 dark:text-zinc-400">
                                                             {items.length} {items.length === 1 ? 'позиція' : 'позицій'}
                                                         </div>
                                                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -383,8 +383,8 @@ export default function OrdersPage() {
                                                                     </div>
                                                                 </SelectTrigger>
                                                                 <SelectContent>
-                                                                    <SelectItem value="processing">В обробці</SelectItem>
-                                                                    <SelectItem value="completed">Оброблено</SelectItem>
+                                                                    <SelectItem value="processing" className="text-blue-600 dark:text-blue-400 font-medium cursor-pointer">В обробці</SelectItem>
+                                                                    <SelectItem value="completed" className="text-green-600 dark:text-green-400 font-medium cursor-pointer">Оброблено</SelectItem>
                                                                 </SelectContent>
                                                             </Select>
 
@@ -452,7 +452,7 @@ export default function OrdersPage() {
                             <CheckCircle className="h-5 w-5" />
                             Звіт успішно сформовано
                         </DialogTitle>
-                        <DialogDescription className="text-zinc-500">
+                        <DialogDescription className="text-zinc-500 dark:text-zinc-400">
                             Звіт по замовленнях за вибраний період успішно експортовано в Google Sheets.
                         </DialogDescription>
                     </DialogHeader>
@@ -491,13 +491,13 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                 <div className="space-y-2">
                     <div className="flex items-center gap-2 text-sm">
                         <User size={14} className="text-zinc-400" />
-                        <span className="font-medium font-sans">{order.customerName}</span>
+                        <span className="font-sans text-zinc-900 dark:text-zinc-100">{order.customerName}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-sm">
+                    <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                         <Mail size={14} className="text-zinc-400" />
                         <span className="font-sans">{order.customerEmail}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-zinc-500">
+                    <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                         <Calendar size={14} className="text-zinc-400" />
                         <span className="font-sans">Замовлення від {new Date(order.orderDate).toLocaleString('uk-UA', { timeZone: 'UTC' })}</span>
                     </div>
@@ -508,7 +508,7 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                 <h4 className="text-[10px] uppercase font-bold text-zinc-400 tracking-wider">Склад замовлення</h4>
                 <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-xl border border-zinc-100 dark:border-zinc-800 overflow-hidden shadow-sm overflow-x-auto">
                     <table className="w-full text-left text-[10px] sm:text-[11px] min-w-[500px] sm:min-w-0">
-                        <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 font-bold border-b border-zinc-100 dark:border-zinc-800">
+                        <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 font-bold border-b border-zinc-100 dark:border-zinc-800">
                             <tr>
                                 <th className="px-3 py-2">Товар</th>
                                 <th className="px-3 py-2 text-center">К-сть</th>
@@ -541,14 +541,14 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                                             </div>
                                         </td>
                                         <td className="px-3 py-2 text-center text-zinc-600 dark:text-zinc-400">
-                                            <Badge variant="secondary" className="text-[9px] px-1.5 h-3.5 font-bold bg-zinc-100 text-zinc-600 border-zinc-200">
+                                            <Badge variant="secondary" className="text-[9px] px-1.5 h-3.5 font-bold bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700">
                                                 {item.quantity} уп
                                             </Badge>
                                         </td>
-                                        <td className="px-3 py-2 text-right font-mono text-zinc-500">
+                                        <td className="px-3 py-2 text-right font-mono text-zinc-500 dark:text-zinc-400">
                                             {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR' }).format(pPerPack)}
                                         </td>
-                                        <td className="px-3 py-2 text-right font-mono text-zinc-600 font-medium">
+                                        <td className="px-3 py-2 text-right font-mono text-zinc-600 dark:text-zinc-300 font-medium">
                                             <div className="font-bold text-sm tracking-tight">{totalCont.toFixed(unit === 'шт' ? 0 : 2)} {unit}</div>
                                             <div className="text-[9px] text-zinc-400 font-normal">({inPack} {unit} в уп)</div>
                                         </td>
@@ -594,7 +594,7 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
 
                                     <div className="flex items-center justify-between mt-2">
                                         <div className="flex items-center gap-2">
-                                            <Badge variant="secondary" className="text-[10px] px-1.5 h-4 font-bold bg-zinc-100 text-zinc-600 border-zinc-200">
+                                            <Badge variant="secondary" className="text-[10px] px-1.5 h-4 font-bold bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700">
                                                 {item.quantity} уп
                                             </Badge>
                                             <span className="text-[10px] text-zinc-400">

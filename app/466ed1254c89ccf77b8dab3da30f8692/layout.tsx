@@ -3,7 +3,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, ShoppingBag, PieChart } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, PieChart, Store } from 'lucide-react';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default function DashboardLayout({
     children,
@@ -30,24 +31,40 @@ export default function DashboardLayout({
                             <h1 className="text-lg font-black tracking-tight text-zinc-900 dark:text-zinc-50 hidden sm:block">Адмін-панель</h1>
                         </div>
 
-                        <nav className="flex items-center gap-1">
-                            {tabs.map((tab) => {
-                                const isActive = pathname === tab.href;
-                                return (
-                                    <Link
-                                        key={tab.name}
-                                        href={tab.href}
-                                        className={`px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${isActive
-                                            ? 'bg-primary/10 text-primary'
-                                            : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                                            }`}
-                                    >
-                                        <tab.icon size={16} />
-                                        {tab.name}
-                                    </Link>
-                                );
-                            })}
-                        </nav>
+                        <div className="flex items-center gap-4">
+                            <nav className="flex items-center gap-1">
+                                {tabs.map((tab) => {
+                                    const isActive = pathname === tab.href;
+                                    return (
+                                        <Link
+                                            key={tab.name}
+                                            href={tab.href}
+                                            className={`px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${isActive
+                                                ? 'bg-primary/10 text-primary'
+                                                : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                                                }`}
+                                        >
+                                            <tab.icon size={16} />
+                                            {tab.name}
+                                        </Link>
+                                    );
+                                })}
+                            </nav>
+
+                            <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 hidden sm:block" />
+
+                            <div className="flex items-center gap-2">
+                                <Link
+                                    href="/"
+                                    target="_blank"
+                                    className="p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+                                    title="Перейти в магазин"
+                                >
+                                    <Store size={20} />
+                                </Link>
+                                <ThemeToggle />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </header>

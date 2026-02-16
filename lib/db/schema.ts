@@ -25,7 +25,10 @@ export const orders = pgTable("orders", {
     itemsSummary: text("items_summary"), // For compatibility with existing sheet logic if needed
     totalPrice: real("total_price").notNull(),
     currency: text("currency").notNull(),
+    invoice: text("invoice"),
+    invoiceStatus: text("invoice_status").default("pending"),
     status: text("status").default("processing"),
+    fakturowniaClientId: integer("fakturownia_client_id"), // Link to Fakturownia Client ID
     orderDate: timestamp("order_date").defaultNow(),
     createdAt: timestamp("created_at").defaultNow(),
 });
@@ -37,3 +40,14 @@ export const productMetadata = pgTable("product_metadata", {
     position: integer("position").default(0),
     updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+export const reports = pgTable("reports", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    startDate: timestamp("start_date").notNull(),
+    endDate: timestamp("end_date").notNull(),
+    data: jsonb("data").notNull(),
+    invoices: jsonb("invoices"), // Store invoice metadata: { [rowIndex]: { invoiceId, invoiceUrl, invoiceNumber, createdAt } }
+    createdAt: timestamp("created_at").defaultNow(),
+});
+

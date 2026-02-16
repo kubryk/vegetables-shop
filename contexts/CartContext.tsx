@@ -6,9 +6,9 @@ import { Product } from '@/types/product';
 
 type CartContextType = {
   items: CartItem[];
-  addToCart: (product: Product, quantity?: number) => void;
+  addToCart: (product: Product, quantity?: number, additionalInfo?: string, baseAdditionalInfo?: string, packageCount?: number, packageType?: string) => void;
   removeFromCart: (productId: string) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
+  updateQuantity: (productId: string, quantity: number, additionalInfo?: string, baseAdditionalInfo?: string, packageCount?: number, packageType?: string) => void;
   clearCart: () => void;
   getTotalPrice: () => number;
   getTotalItems: () => number;
@@ -48,10 +48,9 @@ const loadCartFromStorage = (): CartItem[] => {
               ? raw.image.trim()
               : '',
             category: String(raw.category || 'Інше'),
-            unit: String(raw.unit || 'кг'),
+            unit: String(raw.unit || 'kg'),
             netWeight: Number(raw.netWeight || (raw as any).cardboardWeight || 0),
             unitPerCardboard: Number(raw.unitPerCardboard || 0),
-            pricePerUnit: Number(raw.pricePerUnit || 0),
           } satisfies CartItem;
         })
         .filter((x) => x.productId && x.quantity > 0);
@@ -93,7 +92,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [items, isInitialized]);
 
-  const addToCart = useCallback((product: Product, quantity: number = 1) => {
+  const addToCart = useCallback((product: Product, quantity: number = 1, additionalInfo?: string, baseAdditionalInfo?: string, packageCount?: number, packageType?: string) => {
     if (!product.active) return;
     if (quantity <= 0) return;
 
@@ -111,7 +110,11 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
               unit: product.unit || item.unit,
               netWeight: product.netWeight || item.netWeight,
               unitPerCardboard: product.unitPerCardboard || item.unitPerCardboard,
-              pricePerUnit: product.pricePerUnit || item.pricePerUnit,
+              price: product.pricePerUnit || item.price,
+              additionalInfo: additionalInfo || item.additionalInfo || product.additionalInfo,
+              baseAdditionalInfo: baseAdditionalInfo || item.baseAdditionalInfo,
+              packageCount: (packageCount || 0) + (item.packageCount || 0),
+              packageType: packageType || item.packageType,
             }
             : item
         );
@@ -123,14 +126,17 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
           productId: product.id,
           name: product.name,
           category: product.category || 'Інше',
-          price: product.pricePerCardboard || 0,
+          price: product.pricePerUnit || 0,
           quantity,
           currency: (product.currency || DEFAULT_CURRENCY).toUpperCase(),
           image: product.image || '',
-          unit: product.unit || 'кг',
+          unit: product.unit || 'kg',
           netWeight: product.netWeight || 0,
           unitPerCardboard: product.unitPerCardboard || 0,
-          pricePerUnit: product.pricePerUnit || 0,
+          additionalInfo: additionalInfo || product.additionalInfo,
+          baseAdditionalInfo: baseAdditionalInfo,
+          packageCount: packageCount,
+          packageType: packageType,
         },
       ];
     });
@@ -140,7 +146,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     setItems((prevItems) => prevItems.filter((item) => item.productId !== productId));
   }, []);
 
-  const updateQuantity = useCallback((productId: string, quantity: number) => {
+  const updateQuantity = useCallback((productId: string, quantity: number, additionalInfo?: string, baseAdditionalInfo?: string, packageCount?: number, packageType?: string) => {
     if (quantity <= 0) {
       removeFromCart(productId);
       return;
@@ -148,7 +154,14 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
     setItems((prevItems) =>
       prevItems.map((item) =>
-        item.productId === productId ? { ...item, quantity } : item
+        item.productId === productId ? {
+          ...item,
+          quantity,
+          additionalInfo: additionalInfo || item.additionalInfo,
+          baseAdditionalInfo: baseAdditionalInfo || item.baseAdditionalInfo,
+          packageCount: packageCount !== undefined ? packageCount : item.packageCount,
+          packageType: packageType || item.packageType
+        } : item
       )
     );
   }, [removeFromCart]);
@@ -164,7 +177,10 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   }, [items]);
 
   const getTotalItems = useCallback(() => {
-    return items.reduce((total, item) => total + item.quantity, 0);
+    return items.reduce((total, item) => {
+      const inPack = item.netWeight || item.unitPerCardboard || 1;
+      return total + Math.round(item.quantity / inPack);
+    }, 0);
   }, [items]);
 
   const getCurrency = useCallback(() => {

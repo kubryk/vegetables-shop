@@ -41,7 +41,7 @@ export default function RootLayout({
         <ThemeInitScript />
         <CartProvider>
           {children}
-          <Toaster position="top-right" richColors duration={10000} />
+          <Toaster position="bottom-right" richColors duration={10000} />
         </CartProvider>
       </body>
     </html>

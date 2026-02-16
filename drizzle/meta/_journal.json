@@ -15,6 +15,20 @@
       "when": 1770660601221,
       "tag": "0001_open_champions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770978006246,
+      "tag": "0002_first_odin",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1771021515782,
+      "tag": "0003_watery_the_call",
+      "breakpoints": true
     }
   ]
 }

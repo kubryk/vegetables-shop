@@ -59,7 +59,47 @@ const ProductCard = ({ product }: ProductCardProps) => {
   const hasPerUnit = pricePerUnit > 0;
 
   const handleAddToCart = () => {
-    addToCart(product, selectedQuantity);
+    // Calculate total weight/quantity based on selected packages
+    // For piece-based products: multiply by unitPerCardboard
+    // For weight-based products: multiply by netWeight
+    let totalQuantity = selectedQuantity;
+
+    console.log('Product:', product.name, {
+      unit: product.unit,
+      netWeight: packageWeightKg,
+      unitPerCardboard: unitsPerPackage,
+      selectedQuantity
+    });
+
+    const isPieceUnit = ['pcs', 'шт', 'szt', 'item', 'unit'].includes(String(product.unit || '').toLowerCase());
+    if (isPieceUnit && unitsPerPackage > 0) {
+      totalQuantity = selectedQuantity * unitsPerPackage;
+      console.log('Piece-based product, totalQuantity:', totalQuantity);
+    } else if (packageWeightKg > 0) {
+      totalQuantity = selectedQuantity * packageWeightKg;
+      console.log('Weight-based product, totalQuantity:', totalQuantity);
+    }
+
+    // Format additional info by multiplying any leading number
+    let dynamicAdditionalInfo = product.additionalInfo;
+    let packageCount = selectedQuantity;
+    let packageType = product.additionalInfo || '';
+
+    if (product.additionalInfo) {
+      const match = product.additionalInfo.match(/^(\d+(?:\.\d+)?)\s*(.*)/);
+      if (match) {
+        const num = parseFloat(match[1]);
+        const text = match[2];
+        packageCount = num * selectedQuantity;
+        packageType = text;
+        dynamicAdditionalInfo = `${packageCount.toFixed(0)} ${text}`;
+      } else {
+        packageType = product.additionalInfo;
+        dynamicAdditionalInfo = `${selectedQuantity} ${product.additionalInfo}`;
+      }
+    }
+
+    addToCart(product, totalQuantity, dynamicAdditionalInfo, product.additionalInfo, packageCount, packageType);
     setSelectedQuantity(1);
 
     setIsJustAdded(true);
@@ -131,6 +171,7 @@ const ProductCard = ({ product }: ProductCardProps) => {
         <h3 className="mb-2 line-clamp-2 text-xl font-bold leading-tight text-gray-900 dark:text-zinc-50 tracking-tight group-hover:text-green-700 transition-colors">
           {product.name}
         </h3>
+
 
         <div className="mt-auto pt-4 space-y-4">
           {/* Price section */}

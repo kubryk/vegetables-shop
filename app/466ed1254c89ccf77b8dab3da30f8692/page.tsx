@@ -91,25 +91,6 @@ const ProductForm = ({
                                     Чим більше число, тим вище товар на головній сторінці (за замовчуванням 0).
                                 </p>
                             </div>
-
-                            <Separator />
-
-                            <div className="space-y-2">
-                                <Label className="text-xs font-bold uppercase text-zinc-400">Відображення у звіті</Label>
-                                <Select
-                                    value={newProduct.agregationResult}
-                                    onValueChange={(v) => setNewProduct({ ...newProduct, agregationResult: v })}
-                                >
-                                    <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="weight">Вага</SelectItem>
-                                        <SelectItem value="cardboard">Ящики</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <p className="text-[10px] text-zinc-400">
-                                    Визначає, як цей товар буде відображатися у зведеному звіті.
-                                </p>
-                            </div>
                         </div>
                     </div>
 
@@ -277,22 +258,6 @@ const ProductForm = ({
 
                         <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4">
                             <div className="space-y-2">
-                                <Label className="text-xs font-bold uppercase text-zinc-400">Тип агрегації у звіті</Label>
-                                <Select
-                                    value={newProduct.agregationResult}
-                                    onValueChange={(v) => setNewProduct({ ...newProduct, agregationResult: v })}
-                                >
-                                    <SelectTrigger className="h-10 rounded-lg"><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="weight">Вага (Total Weight)</SelectItem>
-                                        <SelectItem value="cardboard">Штуки (Pcs / Boxes)</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <p className="text-[10px] text-zinc-400">
-                                    Визначає, як цей товар буде відображатися у зведеному звіті: як загальна вага або як кількість ящиків/штук.
-                                </p>
-                            </div>
-                            <div className="space-y-2 pt-4 border-t border-zinc-100 dark:border-zinc-800">
                                 <Label className="text-xs font-bold uppercase text-zinc-400">Сортування (Позиція)</Label>
                                 <Input
                                     type="number"
@@ -671,6 +636,11 @@ export default function ProductsPage() {
                                                                 {p.agregationResult}
                                                             </Badge>
                                                         )}
+                                                        {p.additionalInfo && (
+                                                            <Badge variant="outline" className="px-2 py-0 h-5 text-[10px] rounded-md font-semibold border-amber-200 text-amber-600 bg-amber-50 dark:bg-amber-900/10 dark:text-amber-400 dark:border-amber-800">
+                                                                {p.additionalInfo}
+                                                            </Badge>
+                                                        )}
                                                     </div>
                                                 </div>
 
@@ -797,7 +767,9 @@ export default function ProductsPage() {
                                                             <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
                                                                 {p.unit === 'kg' ? `${p.netWeight} кг` : `${p.unitPerCardboard} шт. ${p.netWeight > 0 ? `(${p.netWeight} кг)` : ''}`}
                                                             </span>
-                                                            <span className="text-[10px] text-zinc-400 uppercase tracking-tighter">в упаковці</span>
+                                                            <span className="text-[10px] text-zinc-400 uppercase tracking-tighter">
+                                                                {p.additionalInfo ? p.additionalInfo : 'в упаковці'}
+                                                            </span>
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">

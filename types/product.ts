@@ -13,4 +13,5 @@ export type Product = {
   agregationResult?: string;
   position?: number;
   externalUrl?: string;
+  additionalInfo?: string; // додаткова інформація (пакування)
 };

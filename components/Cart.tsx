@@ -23,6 +23,7 @@ const Cart = () => {
     updateQuantity,
     clearCart,
     getTotalPrice,
+    getTotalItems,
     getCurrency,
     isOpen,
     closeCart,
@@ -42,7 +43,7 @@ const Cart = () => {
 
   const [formData, setFormData] = useState({
     customerName: '',
-    customerEmail: '',
+    customerEmail: 'admin@gmail.com',
   });
 
 
@@ -52,8 +53,39 @@ const Cart = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleQuantityChange = (productId: string, newQuantity: number) => {
-    updateQuantity(productId, newQuantity);
+  const handleQuantityChange = (productId: string, isIncrement: boolean) => {
+    const item = items.find(i => i.productId === productId);
+    if (!item) return;
+
+    const inPack = item.netWeight || item.unitPerCardboard || 1;
+    const currentPackages = Math.round(item.quantity / inPack);
+    const newPackages = isIncrement ? currentPackages + 1 : Math.max(0, currentPackages - 1);
+
+    const newQuantity = newPackages * inPack;
+
+    // Update additionalInfo and packageCount
+    let newAdditionalInfo = item.additionalInfo;
+    let newPackageCount = newPackages; // Default if no number in baseInfo
+    let newPackageType = item.packageType; // Keep existing type
+
+    const baseInfo = item.baseAdditionalInfo || item.additionalInfo;
+
+    if (baseInfo) {
+      const match = baseInfo.match(/^(\d+(?:\.\d+)?)\s*(.*)/);
+      if (match) {
+        const num = parseFloat(match[1]);
+        const text = match[2];
+        newPackageCount = num * newPackages;
+        newPackageType = text;
+        newAdditionalInfo = `${newPackageCount.toFixed(0)} ${text}`;
+      } else {
+        newPackageType = baseInfo;
+        newPackageCount = newPackages;
+        newAdditionalInfo = `${newPackages} ${baseInfo}`;
+      }
+    }
+
+    updateQuantity(productId, newQuantity, newAdditionalInfo, undefined, newPackageCount, newPackageType);
   };
 
   const handleClose = () => {
@@ -62,7 +94,7 @@ const Cart = () => {
     setTimeout(() => {
       setSubmitSuccess(false);
       setLastOrder(null);
-      setFormData({ customerName: '', customerEmail: '' });
+      setFormData({ customerName: '', customerEmail: 'admin@gmail.com' });
     }, 300);
   };
 
@@ -92,10 +124,16 @@ const Cart = () => {
         customerPhone: '',
         customerEmail: formData.customerEmail.trim(),
         customerAddress: undefined,
-        items: currentItems.map(item => ({
-          ...item,
-          totalPrice: item.price * item.quantity
-        })),
+        items: currentItems.map(({ baseAdditionalInfo, ...item }) => {
+          const rawUnit = String(item.unit || '').trim().toLowerCase();
+          const isWeightUnit = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
+          return {
+            ...item,
+            netWeight: isWeightUnit ? item.netWeight : 0,
+            price: item.price,
+            totalPrice: item.price * item.quantity
+          };
+        }),
         totalPrice: currentTotal,
         currency,
         orderDate: new Date().toISOString(),
@@ -184,7 +222,7 @@ const Cart = () => {
                     {lastOrder.items.map((item, idx) => (
                       <li key={idx} className="flex justify-between">
                         <span className="text-gray-900 dark:text-gray-200 truncate pr-2 flex-1">
-                          {item.name} <span className="text-gray-400 whitespace-nowrap">× {item.quantity} {item.netWeight > 0 ? `(${new Intl.NumberFormat('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(item.netWeight * item.quantity)} ${item.unit})` : item.unit === 'pcs' && item.unitPerCardboard > 0 ? `(${item.unitPerCardboard * item.quantity} шт)` : ''}</span>
+                          {item.name} <span className="text-gray-400 whitespace-nowrap">({item.quantity} {item.unit}){item.additionalInfo ? ` [${item.additionalInfo}]` : ''}</span>
                         </span>
                         <span className="font-semibold whitespace-nowrap">{new Intl.NumberFormat('de-DE', { style: 'currency', currency: lastOrder.currency }).format(item.price * item.quantity)}</span>
                       </li>
@@ -282,29 +320,13 @@ const Cart = () => {
                                 </Button>
                               </div>
                               <div className="mt-1 flex flex-col gap-0.5">
-                                {item.netWeight > 0 ? (
-                                  <>
-                                    <p className="text-sm font-bold text-[hsl(142_76%_36%)] dark:text-green-400">
-                                      {new Intl.NumberFormat('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(item.netWeight * item.quantity)} {item.unit}
-                                    </p>
-                                    <p className="text-xs font-medium text-gray-500 dark:text-zinc-400">
-                                      {formattedPrice.format(item.price)} / {new Intl.NumberFormat('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(item.netWeight)} {item.unit}
-                                    </p>
-                                  </>
-                                ) : item.unit === 'pcs' && item.unitPerCardboard > 0 ? (
-                                  <>
-                                    <p className="text-sm font-bold text-[hsl(142_76%_36%)] dark:text-green-400">
-                                      {item.unitPerCardboard * item.quantity} шт
-                                    </p>
-                                    <p className="text-xs font-medium text-gray-500 dark:text-zinc-400">
-                                      {formattedPrice.format(item.price)} / {item.unitPerCardboard} шт
-                                    </p>
-                                  </>
-                                ) : (
-                                  <p className="text-xs font-medium text-gray-500 dark:text-zinc-400">
-                                    {formattedPrice.format(item.price)} / Packung
-                                  </p>
-                                )}
+                                <p className="text-sm font-bold text-[hsl(142_76%_36%)] dark:text-green-400">
+                                  {item.quantity.toFixed(['kg', 'кг', 'g', 'г'].includes(item.unit.toLowerCase()) ? 2 : 0)} {item.unit}
+                                  {item.additionalInfo && <span className="ml-2 text-xs text-gray-500">({item.additionalInfo})</span>}
+                                </p>
+                                <p className="text-xs font-medium text-gray-500 dark:text-zinc-400">
+                                  {formattedPrice.format(item.price)} / {item.unit}
+                                </p>
                               </div>
                             </div>
 
@@ -314,21 +336,21 @@ const Cart = () => {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8 rounded-md bg-white shadow-sm hover:bg-[hsl(142_76%_36%)] hover:text-white disabled:opacity-50 dark:bg-zinc-800 dark:hover:bg-[hsl(142_76%_36%)]"
-                                  onClick={() => handleQuantityChange(item.productId, item.quantity - 1)}
-                                  disabled={item.quantity <= 1}
+                                  className="h-8 w-8 rounded-md bg-white shadow-sm hover:bg-[hsl(142_76%_36%)] hover:text-white disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-[hsl(142_76%_36%)] dark:hover:text-white"
+                                  onClick={() => handleQuantityChange(item.productId, false)}
+                                  disabled={Math.round(item.quantity / (item.netWeight || item.unitPerCardboard || 1)) <= 1}
                                 >
                                   <Minus className="h-3 w-3" />
                                 </Button>
                                 <span className="w-8 text-center text-sm font-bold text-gray-900 dark:text-zinc-100">
-                                  {item.quantity}
+                                  {Math.round(item.quantity / (item.netWeight || item.unitPerCardboard || 1))}
                                 </span>
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-8 w-8 rounded-md bg-white shadow-sm hover:bg-[hsl(142_76%_36%)] hover:text-white disabled:opacity-50 dark:bg-zinc-800 dark:hover:bg-[hsl(142_76%_36%)]"
-                                  onClick={() => handleQuantityChange(item.productId, item.quantity + 1)}
-                                  disabled={item.quantity >= 99}
+                                  className="h-8 w-8 rounded-md bg-white shadow-sm hover:bg-[hsl(142_76%_36%)] hover:text-white disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-[hsl(142_76%_36%)] dark:hover:text-white"
+                                  onClick={() => handleQuantityChange(item.productId, true)}
+                                  disabled={Math.round(item.quantity / (item.netWeight || item.unitPerCardboard || 1)) >= 99}
                                 >
                                   <Plus className="h-3 w-3" />
                                 </Button>
@@ -360,7 +382,7 @@ const Cart = () => {
                       onChange={handleInputChange}
                       required
                       placeholder="Name des Geschäfts"
-                      className="h-10 bg-gray-50 border-0 ring-1 ring-gray-200 focus-visible:ring-primary focus-visible:bg-white transition-all dark:bg-zinc-900 dark:ring-zinc-800"
+                      className="h-10 bg-gray-50 border-0 ring-1 ring-gray-200 focus-visible:ring-primary focus-visible:bg-white dark:focus-visible:bg-zinc-900 transition-all dark:bg-zinc-900 dark:ring-zinc-800 dark:text-zinc-100"
                     />
                   </div>
                   <div className="space-y-1">
@@ -371,8 +393,8 @@ const Cart = () => {
                       value={formData.customerEmail}
                       onChange={handleInputChange}
                       required
-                      placeholder="Email"
-                      className="h-10 bg-gray-50 border-0 ring-1 ring-gray-200 focus-visible:ring-primary focus-visible:bg-white transition-all dark:bg-zinc-900 dark:ring-zinc-800"
+                      placeholder="admin@gmail.com"
+                      className="h-10 bg-gray-50 border-0 ring-1 ring-gray-200 focus-visible:ring-primary focus-visible:bg-white dark:focus-visible:bg-zinc-900 transition-all dark:bg-zinc-900 dark:ring-zinc-800 dark:text-zinc-100"
                     />
                   </div>
                 </div>
@@ -388,7 +410,7 @@ const Cart = () => {
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-500 dark:text-zinc-400">
-                    Gesamtsumme ({items.reduce((total, item) => total + item.quantity, 0)} Stk.)
+                    Gesamtsumme ({getTotalItems()} Pack.)
                   </span>
                   <span className="text-2xl font-extrabold text-[hsl(142_76%_36%)] dark:text-[hsl(142_70%_50%)]">
                     {new Intl.NumberFormat('de-DE', { style: 'currency', currency: getCurrency(), currencyDisplay: 'narrowSymbol', maximumFractionDigits: 2 }).format(getTotalPrice())}

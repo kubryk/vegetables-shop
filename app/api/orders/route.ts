@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { appendOrderToSheet } from '@/lib/google-sheets';
 import { db } from '@/lib/db';
 import { orders as ordersTable } from '@/lib/db/schema';
+import { findClientByEmail } from '@/lib/fakturownia';
 
 export async function POST(request: Request) {
     try {
@@ -36,16 +37,27 @@ export async function POST(request: Request) {
         // Format items for summary
         const itemsSummary = items
             .map((item: any) => {
-                const inPack = Number(item.netWeight || item.unitPerCardboard || 0);
-                const unit = item.unit === 'pcs' ? 'шт' : (item.unit || 'кг');
+                const unit = item.unit || 'kg';
                 const quantity = Number(item.quantity) || 0;
 
-                if (inPack > 0) {
-                    return `${item.name} (${quantity} уп. по ${inPack} ${unit})`;
-                }
-                return `${item.name} (${quantity} ${unit})`;
+                return `${item.name} (${quantity} ${unit})${item.additionalInfo ? ` [${item.additionalInfo}]` : ''}`;
             })
             .join('\n');
+
+        // Look up Fakturownia Client ID
+        let fakturowniaClientId: number | null = null;
+        if (customerEmail) {
+            try {
+                fakturowniaClientId = await findClientByEmail(customerEmail);
+                if (fakturowniaClientId) {
+                    console.log(`Found Fakturownia Client ID for ${customerEmail}: ${fakturowniaClientId}`);
+                } else {
+                    console.log(`No Fakturownia Client found for ${customerEmail}`);
+                }
+            } catch (err) {
+                console.error('Error looking up Fakturownia client:', err);
+            }
+        }
 
         // 1. Save to Database
         let dbOrderId = null;
@@ -58,6 +70,7 @@ export async function POST(request: Request) {
                 totalPrice: parseFloat(totalPrice.toString()),
                 currency,
                 status: 'processing',
+                fakturowniaClientId,
                 orderDate: dbDate,
             }).returning();
             dbOrderId = newOrder.id;

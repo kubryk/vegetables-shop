@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, ShoppingBag, PieChart, Store } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, PieChart, Store, FileBarChart2 } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle';
 
 export default function DashboardLayout({
@@ -16,13 +16,16 @@ export default function DashboardLayout({
     const tabs = [
         { name: 'Товари', href: '/466ed1254c89ccf77b8dab3da30f8692', icon: LayoutDashboard },
         { name: 'Замовлення', href: '/466ed1254c89ccf77b8dab3da30f8692/orders', icon: ShoppingBag },
+        { name: 'Звіти', href: '/466ed1254c89ccf77b8dab3da30f8692/reports', icon: FileBarChart2 },
     ];
+
+    const isReportDetail = pathname?.includes('/reports/') && !pathname?.endsWith('/reports');
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-black font-sans selection:bg-primary/10">
             {/* Header / Sidebar Refactored to Top Nav for Dashboard */}
             <header className="sticky top-0 z-50 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-b border-zinc-200 dark:border-zinc-800">
-                <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+                <div className={isReportDetail ? "w-full px-4 sm:px-6 lg:px-8" : "max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8"}>
                     <div className="flex items-center justify-between h-16">
                         <div className="flex items-center gap-2">
                             <div className="h-8 w-8 bg-primary rounded-xl flex items-center justify-center shadow-lg glow-primary shrink-0">
@@ -69,7 +72,7 @@ export default function DashboardLayout({
                 </div>
             </header>
 
-            <main className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8">
+            <main className={isReportDetail ? "w-full p-4 sm:p-6 lg:p-8" : "max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8"}>
                 {children}
             </main>
         </div>

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { Loader2, RefreshCw, ShoppingBag, Calendar, User, Mail, ChevronRight, ChevronDown, Trash2, CheckCircle, Clock, ChevronLeft, FileBarChart2, FileText } from 'lucide-react';
+import { Loader2, RefreshCw, ShoppingBag, Calendar, User, Mail, ChevronRight, ChevronDown, Trash2, CheckCircle, Clock, ChevronLeft, FileBarChart2, FileText, ExternalLink, UserX, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -158,19 +158,6 @@ export default function OrdersPage() {
                                 </div>
                             </div>
                         </div>
-
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-
-
-                            <Button
-                                onClick={handleExport}
-                                disabled={isExporting}
-                                className="flex-1 sm:flex-none h-9 rounded-full bg-green-600 hover:bg-green-700 text-white shadow-sm hover:shadow-md transition-all"
-                            >
-                                {isExporting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <FileText className="mr-2 h-3.5 w-3.5" />}
-                                Звіт (Sheets)
-                            </Button>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -249,6 +236,21 @@ export default function OrdersPage() {
                                                             <div className="flex items-center gap-2">
                                                                 <User size={14} className="text-zinc-400" />
                                                                 <p className="font-medium text-sm text-zinc-900 dark:text-zinc-100">{order.customerName}</p>
+                                                                {order.fakturowniaClientId ? (
+                                                                    <Link
+                                                                        href={`https://kodarik.fakturownia.pl/clients/${order.fakturowniaClientId}`}
+                                                                        target="_blank"
+                                                                        className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 hover:text-blue-700 transition-colors"
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                        title="Відкрити у Fakturownia"
+                                                                    >
+                                                                        <ExternalLink size={12} />
+                                                                    </Link>
+                                                                ) : (
+                                                                    <div title="Клієнта не знайдено у Fakturownia" className="flex items-center justify-center h-5 w-5 rounded-full bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 cursor-help">
+                                                                        <UserX size={12} />
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         </td>
                                                         <td className="px-4 sm:px-6 py-4 hidden lg:table-cell">
@@ -355,6 +357,21 @@ export default function OrdersPage() {
                                                         <div className="flex items-center gap-2">
                                                             <User size={14} className="text-zinc-400" />
                                                             <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{order.customerName}</span>
+                                                            {order.fakturowniaClientId ? (
+                                                                <Link
+                                                                    href={`https://kodarik.fakturownia.pl/clients/${order.fakturowniaClientId}`}
+                                                                    target="_blank"
+                                                                    className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 hover:text-blue-700 transition-colors"
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    title="Відкрити у Fakturownia"
+                                                                >
+                                                                    <ExternalLink size={12} />
+                                                                </Link>
+                                                            ) : (
+                                                                <div title="Клієнта не знайдено у Fakturownia" className="flex items-center justify-center h-5 w-5 rounded-full bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 cursor-help">
+                                                                    <UserX size={12} />
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <span className="font-mono font-bold text-primary">
                                                             {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR' }).format(order.totalPrice)}
@@ -492,6 +509,20 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                     <div className="flex items-center gap-2 text-sm">
                         <User size={14} className="text-zinc-400" />
                         <span className="font-sans text-zinc-900 dark:text-zinc-100">{order.customerName}</span>
+                        {order.fakturowniaClientId ? (
+                            <Link
+                                href={`https://kodarik.fakturownia.pl/clients/${order.fakturowniaClientId}`}
+                                target="_blank"
+                                className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 hover:text-blue-700 transition-colors"
+                                title="Відкрити у Fakturownia"
+                            >
+                                <ExternalLink size={12} />
+                            </Link>
+                        ) : (
+                            <div title="Клієнта не знайдено у Fakturownia" className="flex items-center justify-center h-5 w-5 rounded-full bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 cursor-help">
+                                <UserX size={12} />
+                            </div>
+                        )}
                     </div>
                     <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                         <Mail size={14} className="text-zinc-400" />
@@ -501,6 +532,27 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                         <Calendar size={14} className="text-zinc-400" />
                         <span className="font-sans">Замовлення від {new Date(order.orderDate).toLocaleString('uk-UA', { timeZone: 'UTC' })}</span>
                     </div>
+                    {(() => {
+                        const totalPackages = items.reduce((sum: number, item: any) => {
+                            // New cleaner logic: Check for explicit packageCount
+                            if (item.packageCount) return sum + item.packageCount;
+
+                            // Fallback 1: Try to parse number from additionalInfo (old orders compatibility)
+                            const countFromInfo = parseInt(item.additionalInfo);
+                            if (!isNaN(countFromInfo)) return sum + countFromInfo;
+
+                            // Fallback 2: Calculate from weight (really old orders)
+                            const inPack = Number(item.netWeight || item.unitPerCardboard || 1);
+                            const count = inPack > 1 ? Math.round((Number(item.quantity) || 0) / inPack) : (Number(item.quantity) || 0);
+                            return sum + count;
+                        }, 0);
+                        return (
+                            <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                                <Package size={14} className="text-zinc-400" />
+                                <span className="font-sans font-bold text-zinc-700 dark:text-zinc-300">Всього упаковок: {totalPackages}</span>
+                            </div>
+                        );
+                    })()}
                 </div>
             </div>
 
@@ -511,21 +563,34 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                         <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 font-bold border-b border-zinc-100 dark:border-zinc-800">
                             <tr>
                                 <th className="px-3 py-2">Товар</th>
-                                <th className="px-3 py-2 text-center">К-сть</th>
-                                <th className="px-3 py-2 text-right">Ціна/уп</th>
-                                <th className="px-3 py-2 text-right">Заг. вага/к-сть</th>
+                                <th className="px-3 py-2 text-center">Кількість</th>
+                                <th className="px-3 py-2 text-center">Пакування</th>
+                                <th className="px-3 py-2 text-right">Ціна/од</th>
                                 <th className="px-3 py-2 text-right">Сума</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
                             {items.map((item: any, idx: number) => {
-                                // Fallback to current product info if order item info is missing
-                                const refProduct = products.find((p: any) => p.id === item.productId || p.id === item.id);
+                                const unit = item.unit || 'kg';
+                                const quantity = Number(item.quantity) || 0;
+                                const pricePerUnit = Number(item.price || item.pricePerUnit || 0); // fallback to pricePerUnit for old orders
+                                const totalPrice = Number(item.totalPrice || (pricePerUnit * quantity));
 
-                                const unit = item.unit === 'pcs' ? 'шт' : (item.unit || refProduct?.unit || 'кг');
-                                const inPack = Number(item.netWeight || item.unitPerCardboard || item.cardboardWeight || refProduct?.netWeight || refProduct?.unitPerCardboard || 0);
-                                const totalCont = (Number(item.quantity) || 0) * inPack;
-                                const pPerPack = Number(item.price || refProduct?.pricePerCardboard || 0);
+                                // Calculate packages count
+                                // Calculate packages count
+                                let packagesCount = item.packageCount;
+
+                                if (!packagesCount) {
+                                    // Fallback: Try to get number from additionalInfo (e.g. "3 wor")
+                                    const parsed = parseInt(item.additionalInfo);
+                                    if (!isNaN(parsed)) {
+                                        packagesCount = parsed;
+                                    } else {
+                                        // Final fallback: Calculate from weight
+                                        const inPack = Number(item.netWeight || item.unitPerCardboard || 1);
+                                        packagesCount = inPack > 1 ? Math.round(quantity / inPack) : quantity;
+                                    }
+                                }
 
                                 return (
                                     <tr key={idx} className="hover:bg-zinc-50/30 dark:hover:bg-zinc-800/20">
@@ -540,20 +605,23 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-3 py-2 text-center text-zinc-600 dark:text-zinc-400">
-                                            <Badge variant="secondary" className="text-[9px] px-1.5 h-3.5 font-bold bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700">
-                                                {item.quantity} уп
-                                            </Badge>
+                                        <td className="px-3 py-2 text-center">
+                                            <div className="font-bold text-sm text-zinc-700 dark:text-zinc-300">
+                                                {quantity.toFixed(['kg', 'кг', 'g', 'г'].includes(unit.toLowerCase()) ? 2 : 0)} {unit}
+                                            </div>
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                            {packagesCount > 0 && (
+                                                <Badge variant="secondary" className="text-[9px] px-1.5 h-3.5 font-bold bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 border-blue-200 dark:border-blue-800">
+                                                    {packagesCount} {item.packageType || item.additionalInfo?.replace(/^\d+\s*/, '') || ''}
+                                                </Badge>
+                                            )}
                                         </td>
                                         <td className="px-3 py-2 text-right font-mono text-zinc-500 dark:text-zinc-400">
-                                            {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR' }).format(pPerPack)}
-                                        </td>
-                                        <td className="px-3 py-2 text-right font-mono text-zinc-600 dark:text-zinc-300 font-medium">
-                                            <div className="font-bold text-sm tracking-tight">{totalCont.toFixed(unit === 'шт' ? 0 : 2)} {unit}</div>
-                                            <div className="text-[9px] text-zinc-400 font-normal">({inPack} {unit} в уп)</div>
+                                            {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR' }).format(pricePerUnit)}/{unit}
                                         </td>
                                         <td className="px-3 py-2 text-right font-mono font-bold text-primary">
-                                            {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR', maximumFractionDigits: 2 }).format(item.totalPrice || (pPerPack * (item.quantity || 0)))}
+                                            {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR', maximumFractionDigits: 2 }).format(totalPrice)}
                                         </td>
                                     </tr>
                                 );
@@ -565,12 +633,25 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                 {/* Mobile View Items List */}
                 <div className="md:hidden flex flex-col gap-3">
                     {items.map((item: any, idx: number) => {
-                        // Fallback logic duplicated for mobile view
-                        const refProduct = products.find((p: any) => p.id === item.productId || p.id === item.id);
-                        const unit = item.unit === 'pcs' ? 'шт' : (item.unit || refProduct?.unit || 'кг');
-                        const inPack = Number(item.netWeight || item.unitPerCardboard || item.cardboardWeight || refProduct?.netWeight || refProduct?.unitPerCardboard || 0);
-                        const totalCont = (Number(item.quantity) || 0) * inPack;
-                        const pPerPack = Number(item.price || refProduct?.pricePerCardboard || 0);
+                        const unit = item.unit || 'kg';
+                        const quantity = Number(item.quantity) || 0;
+                        const pricePerUnit = Number(item.price || item.pricePerUnit || 0);
+                        const totalPrice = Number(item.totalPrice || (pricePerUnit * quantity));
+
+                        // Calculate packages count
+                        let packagesCount = item.packageCount;
+
+                        if (!packagesCount) {
+                            // Fallback: Try to get number from additionalInfo (e.g. "3 wor")
+                            const parsed = parseInt(item.additionalInfo);
+                            if (!isNaN(parsed)) {
+                                packagesCount = parsed;
+                            } else {
+                                // Final fallback: Calculate from weight
+                                const inPack = Number(item.netWeight || item.unitPerCardboard || 1);
+                                packagesCount = inPack > 1 ? Math.round(quantity / inPack) : quantity;
+                            }
+                        }
 
                         return (
                             <div key={idx} className="flex gap-3 bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
@@ -586,7 +667,7 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                                         <div className="flex justify-between items-start gap-2">
                                             <h5 className="font-bold text-sm text-zinc-900 dark:text-zinc-100 truncate">{item.name}</h5>
                                             <span className="font-mono font-bold text-primary text-sm whitespace-nowrap">
-                                                {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR', maximumFractionDigits: 2 }).format(item.totalPrice || (pPerPack * (item.quantity || 0)))}
+                                                {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR', maximumFractionDigits: 2 }).format(totalPrice)}
                                             </span>
                                         </div>
                                         {item.category && <p className="text-[10px] text-zinc-400 uppercase tracking-wider">{item.category}</p>}
@@ -594,16 +675,19 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
 
                                     <div className="flex items-center justify-between mt-2">
                                         <div className="flex items-center gap-2">
-                                            <Badge variant="secondary" className="text-[10px] px-1.5 h-4 font-bold bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700">
-                                                {item.quantity} уп
-                                            </Badge>
-                                            <span className="text-[10px] text-zinc-400">
-                                                x {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR' }).format(pPerPack)}
-                                            </span>
+                                            <div className="font-bold text-xs text-zinc-700 dark:text-zinc-300">
+                                                {quantity.toFixed(['kg', 'кг', 'g', 'г'].includes(unit.toLowerCase()) ? 2 : 0)} {unit}
+                                            </div>
+                                            {packagesCount > 0 && (
+                                                <Badge variant="secondary" className="text-[9px] px-1.5 h-3.5 font-bold bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 border-blue-200 dark:border-blue-800">
+                                                    {packagesCount} {item.packageType || item.additionalInfo?.replace(/^\d+\s*/, '') || ''}
+                                                </Badge>
+                                            )}
                                         </div>
                                         <div className="text-right">
-                                            <div className="font-bold text-xs text-zinc-700 dark:text-zinc-300">{totalCont.toFixed(unit === 'шт' ? 0 : 2)} {unit}</div>
-                                            <div className="text-[9px] text-zinc-400">({inPack} {unit}/уп)</div>
+                                            <div className="text-[10px] text-zinc-400">
+                                                {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR' }).format(pricePerUnit)}/{unit}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

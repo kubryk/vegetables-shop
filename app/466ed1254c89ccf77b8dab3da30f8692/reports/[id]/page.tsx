@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getReport, updateReportData, createInvoiceForReportRow, duplicateReport } from '@/app/actions/reports';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, FileBarChart2, ArrowLeft, Save, FileText, ExternalLink, Copy, Files, AlertTriangle } from 'lucide-react';
+import { Loader2, FileBarChart2, ArrowLeft, Save, FileText, ExternalLink, Copy, Files, AlertTriangle, Trash2, Plus, Truck, FileCheck } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../../../components/ui/tooltip";
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -98,6 +98,10 @@ export default function ReportDetailPage() {
     const [creatingInvoice, setCreatingInvoice] = useState<{ [rowIndex: number]: boolean }>({});
     const [isDuplicating, setIsDuplicating] = useState(false);
 
+    // Driver Rows State
+    const [driverRows, setDriverRows] = useState<any[][]>([]);
+    const [driverPackageCountRows, setDriverPackageCountRows] = useState<any[][]>([]);
+
     // Column Resizing State
     const [columnWidths, setColumnWidths] = useState<{ [key: number]: number }>({});
     const [resizing, setResizing] = useState<{ colIndex: number; startX: number; startWidth: number } | null>(null);
@@ -139,6 +143,14 @@ export default function ReportDetailPage() {
         const res = await getReport(reportId);
         if (res.success && res.data) {
             setReport(res.data);
+            // Initialize driver rows from report data
+            const reportData = res.data.data as any;
+            if (reportData?.driverRows) {
+                setDriverRows(reportData.driverRows);
+            }
+            if (reportData?.driverPackageCountRows) {
+                setDriverPackageCountRows(reportData.driverPackageCountRows);
+            }
         } else {
             toast.error(res.error || 'Failed to load report');
         }
@@ -473,6 +485,151 @@ export default function ReportDetailPage() {
         }
     };
 
+    // Driver Row Management Functions
+    const handleAddDriver = () => {
+        if (!report || !report.data) return;
+
+        const numCols = report.data.headers.length;
+        const driverCount = driverRows.length + 1;
+
+        // Create new driver row with empty values
+        const newDriverRow = new Array(numCols).fill(0);
+        newDriverRow[0] = `Driver ${driverCount}`; // Name
+        newDriverRow[1] = 0; // Weight total
+
+        // Create package count row for driver
+        const newDriverPkgRow = new Array(numCols).fill(0);
+        newDriverPkgRow[0] = '';
+        newDriverPkgRow[1] = 0;
+
+        setDriverRows([...driverRows, newDriverRow]);
+        setDriverPackageCountRows([...driverPackageCountRows, newDriverPkgRow]);
+
+        // Save to DB
+        saveDriverRowsToDb([...driverRows, newDriverRow], [...driverPackageCountRows, newDriverPkgRow]);
+    };
+
+    const handleRemoveDriver = (rowIdx: number) => {
+        const newDriverRows = driverRows.filter((_, idx) => idx !== rowIdx);
+        const newDriverPkgRows = driverPackageCountRows.filter((_, idx) => idx !== rowIdx);
+
+        setDriverRows(newDriverRows);
+        setDriverPackageCountRows(newDriverPkgRows);
+
+        // Save to DB
+        saveDriverRowsToDb(newDriverRows, newDriverPkgRows);
+        toast.success('Driver removed');
+    };
+
+    const handleDriverCellUpdate = async (rowIdx: number, headerIdx: number, newValue: any) => {
+        if (!report || !report.data) return false;
+
+        const newDriverRows = [...driverRows];
+        const newDriverRow = [...newDriverRows[rowIdx]];
+
+        const isNumberCol = headerIdx > 0;
+        const val = isNumberCol ? (Number(newValue) || 0) : newValue;
+        newDriverRow[headerIdx] = val;
+
+        // Recalculate weight total if editing product column
+        if (isNumberCol && headerIdx >= 2) {
+            let rowTotal = 0;
+            for (let i = 2; i < newDriverRow.length; i++) {
+                const colHeader = report.data.headers[i];
+                const qty = Number(newDriverRow[i]) || 0;
+                const meta = report.data.headerMetadata?.[i];
+
+                if (meta) {
+                    const unit = meta.unit?.toLowerCase();
+                    if (['kg', 'кг'].includes(unit)) {
+                        rowTotal += qty;
+                    } else if (['g', 'г'].includes(unit)) {
+                        rowTotal += qty / 1000;
+                    } else {
+                        const netWeight = meta.netWeight || 0;
+                        rowTotal += qty * netWeight;
+                    }
+                }
+            }
+            newDriverRow[1] = rowTotal;
+        }
+
+        newDriverRows[rowIdx] = newDriverRow;
+
+        // Recalculate package counts for this driver row
+        const newDriverPkgRows = [...driverPackageCountRows];
+        const newDriverPkgRow = [...newDriverPkgRows[rowIdx]];
+
+        if (headerIdx >= 2) {
+            const meta = report.data.headerMetadata?.[headerIdx];
+            if (meta) {
+                const weightOrQty = Number(val) || 0;
+                let newPkgCount = 0;
+
+                // Try to parse from meta.additionalInfo (e.g., "3 ggg" means 3 packages)
+                let packageType = 'kart';
+                if (meta.additionalInfo) {
+                    const match = meta.additionalInfo.match(/^(\d+(?:\.\d+)?)\s+(.+)/);
+                    if (match) {
+                        const pkgCountFromMeta = parseFloat(match[1]);
+                        packageType = match[2].trim();
+
+                        if (meta.unitPerCardboard > 0 && pkgCountFromMeta > 0) {
+                            const ratio = pkgCountFromMeta / meta.unitPerCardboard;
+                            newPkgCount = weightOrQty * ratio;
+                        }
+                    }
+                }
+
+                // Fallback calculation
+                if (newPkgCount === 0) {
+                    if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
+                        if (meta.netWeight > 0) newPkgCount = weightOrQty / meta.netWeight;
+                    } else {
+                        if (meta.unitPerCardboard > 0) newPkgCount = weightOrQty / meta.unitPerCardboard;
+                    }
+                }
+
+                newDriverPkgRow[headerIdx] = { count: newPkgCount, packageType };
+            }
+
+            // Recalculate row total package count
+            let rowPkgTotal = 0;
+            for (let i = 2; i < newDriverPkgRow.length; i++) {
+                const cell = newDriverPkgRow[i];
+                const count = typeof cell === 'object' && cell !== null ? cell.count : (Number(cell) || 0);
+                rowPkgTotal += count;
+            }
+            newDriverPkgRow[1] = rowPkgTotal;
+        }
+
+        newDriverPkgRows[rowIdx] = newDriverPkgRow;
+
+        // Update state
+        setDriverRows(newDriverRows);
+        setDriverPackageCountRows(newDriverPkgRows);
+
+        // Save to DB
+        await saveDriverRowsToDb(newDriverRows, newDriverPkgRows);
+        return true;
+    };
+
+    const saveDriverRowsToDb = async (newDriverRows: any[][], newDriverPkgRows: any[][]) => {
+        if (!report || !report.data) return;
+
+        const newData = {
+            ...report.data,
+            driverRows: newDriverRows,
+            driverPackageCountRows: newDriverPkgRows,
+        };
+
+        const res = await updateReportData(id, newData);
+        if (res.success) {
+            setReport({ ...report, data: newData });
+        }
+    };
+
+
     const formatCell = (value: any, colIndex: number) => {
         if (value === null || value === undefined) return '';
 
@@ -642,7 +799,7 @@ export default function ReportDetailPage() {
                                     );
                                 })}
                                 {/* Actions Column */}
-                                <th className="px-4 py-3 font-bold text-zinc-600 dark:text-zinc-300 border-b border-zinc-200 dark:border-zinc-700 whitespace-nowrap bg-zinc-50 dark:bg-zinc-800 sticky right-0 z-30" style={{ width: '180px', minWidth: '180px' }}>
+                                <th className="px-4 py-3 font-bold text-center text-zinc-600 dark:text-zinc-300 border-b border-zinc-200 dark:border-zinc-700 whitespace-nowrap bg-zinc-50 dark:bg-zinc-800 sticky right-0 z-30" style={{ width: '60px', minWidth: '60px' }}>
                                     Дії
                                 </th>
                             </tr>
@@ -740,38 +897,32 @@ export default function ReportDetailPage() {
                                             );
                                         })}
                                         {/* Actions Column */}
-                                        <td className="px-2 py-2 border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky right-0 z-10" style={{ width: '180px', minWidth: '180px' }}>
+                                        <td className="px-2 py-2 text-center border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky right-0 z-10" style={{ width: '60px', minWidth: '60px' }}>
                                             {invoiceData ? (
                                                 <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="w-full text-xs"
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    className="w-8 h-8 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
                                                     asChild
+                                                    title={`Фактура: ${invoiceData.invoiceNumber}`}
                                                 >
-                                                    <a href={invoiceData.invoiceUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
-                                                        <FileText size={14} />
-                                                        {invoiceData.invoiceNumber}
-                                                        <ExternalLink size={12} />
+                                                    <a href={invoiceData.invoiceUrl} target="_blank" rel="noopener noreferrer">
+                                                        <FileCheck size={16} />
                                                     </a>
                                                 </Button>
                                             ) : (
                                                 <Button
-                                                    size="sm"
-                                                    variant="default"
-                                                    className="w-full text-xs"
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    className="w-8 h-8 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                                                     onClick={() => handleCreateInvoice(rowIdx)}
                                                     disabled={creatingInvoice[rowIdx]}
+                                                    title="Виставити фактуру"
                                                 >
                                                     {creatingInvoice[rowIdx] ? (
-                                                        <>
-                                                            <Loader2 size={14} className="animate-spin mr-1" />
-                                                            Створення...
-                                                        </>
+                                                        <Loader2 size={16} className="animate-spin" />
                                                     ) : (
-                                                        <>
-                                                            <FileText size={14} className="mr-1" />
-                                                            Виставити фактуру
-                                                        </>
+                                                        <FileText size={16} />
                                                     )}
                                                 </Button>
                                             )}
@@ -780,7 +931,8 @@ export default function ReportDetailPage() {
                                 )
                             })}
                         </tbody>
-                        <tfoot className="bg-zinc-100 dark:bg-zinc-800 sticky bottom-0 z-10 font-bold border-t-2 border-zinc-200 dark:border-zinc-700 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+                        {/* Order Footer - Rendered as tbody rows, not sticky */}
+                        <tbody className="bg-zinc-100 dark:bg-zinc-800 font-bold border-t-2 border-zinc-200 dark:border-zinc-700">
                             {/* Row 1: Value Totals */}
                             <tr>
                                 {reportData.footer.map((cell: any, idx: number) => {
@@ -797,7 +949,7 @@ export default function ReportDetailPage() {
                                             }}
                                             className={cn(
                                                 "px-4 py-3 text-zinc-900 dark:text-zinc-100 whitespace-nowrap border-r border-zinc-200 dark:border-zinc-700 overflow-hidden",
-                                                idx < 2 && "sticky z-30 bg-zinc-100 dark:bg-zinc-800",
+                                                idx < 2 && "sticky z-20 bg-zinc-100 dark:bg-zinc-800",
                                                 idx === 1 && "shadow-[4px_0_8px_-2px_rgba(0,0,0,0.1)] clip-right",
                                             )}>
                                             <div className="flex flex-col">
@@ -816,9 +968,7 @@ export default function ReportDetailPage() {
                                         </td>
                                     );
                                 })}
-                                {/* Actions Column Footer */}
-                                <td className="px-4 py-3 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 sticky right-0 z-30" style={{ width: '180px', minWidth: '180px' }}>
-                                </td>
+                                <td className="px-4 py-3 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 sticky right-0 z-20" style={{ width: '60px', minWidth: '60px' }}></td>
                             </tr>
 
                             {/* Row 2: Package Counts */}
@@ -855,80 +1005,142 @@ export default function ReportDetailPage() {
                                             }}
                                             className={cn(
                                                 "px-4 py-3 text-zinc-900 dark:text-zinc-100 whitespace-nowrap border-r border-zinc-200 dark:border-zinc-700 overflow-hidden font-bold",
-                                                idx < 2 && "sticky z-30 bg-zinc-100 dark:bg-zinc-800",
+                                                idx < 2 && "sticky z-20 bg-zinc-100 dark:bg-zinc-800",
                                                 idx === 1 && "shadow-[4px_0_8px_-2px_rgba(0,0,0,0.1)] clip-right",
                                             )}>
                                             {content}
                                         </td>
                                     );
                                 })}
-                                <td className="px-4 py-3 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 sticky right-0 z-30" style={{ width: '180px', minWidth: '180px' }}></td>
+                                <td className="px-4 py-3 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 sticky right-0 z-20" style={{ width: '60px', minWidth: '60px' }}></td>
                             </tr>
-                        </tfoot>
+                        </tbody>
+
+                        {/* Driver Rows Section - Appended to Main Table */}
+                        {driverRows.length > 0 && (
+                            <tbody className="border-t-4 border-double border-blue-200 dark:border-blue-800">
+                                {driverRows.map((row: any[], rowIdx: number) => (
+                                    <tr key={`driver-${rowIdx}`} className="hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors bg-blue-50/10 dark:bg-blue-900/5">
+                                        {row.map((cell: any, colIdx: number) => {
+                                            const header = reportData.headers[colIdx];
+                                            const width = getColumnWidth(colIdx);
+                                            const left = getStickyLeft(colIdx);
+                                            const meta = reportData.headerMetadata?.[colIdx];
+                                            const isEditable = true;
+
+                                            return (
+                                                <td key={colIdx}
+                                                    style={{
+                                                        width: `${width}px`,
+                                                        minWidth: `${width}px`,
+                                                        maxWidth: `${width}px`,
+                                                        left: left !== undefined ? `${left}px` : undefined
+                                                    }}
+                                                    className={cn(
+                                                        "px-2 py-2 text-zinc-700 dark:text-zinc-300 whitespace-nowrap border-r border-blue-100 dark:border-blue-800 overflow-hidden",
+                                                        colIdx < 2 && "sticky z-10 bg-blue-50/10 dark:bg-zinc-900",
+                                                        header === 'Вага' && "font-bold bg-blue-50/30 dark:bg-blue-900/10 px-4"
+                                                    )}>
+                                                    <div className="flex flex-col relative group/cell">
+                                                        <div className="flex items-center">
+                                                            <EditableCell
+                                                                value={cell}
+                                                                onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, colIdx, newVal)}
+                                                                unit={header === 'Вага' ? 'kg' : meta?.unit}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            );
+                                        })}
+                                        <td className="px-2 py-2 text-center border-l border-blue-100 dark:border-blue-800 bg-white dark:bg-zinc-900 sticky right-0 z-10" style={{ width: '60px', minWidth: '60px' }}>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => handleRemoveDriver(rowIdx)}
+                                                className="w-8 h-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                title="Видалити водія"
+                                            >
+                                                <Trash2 size={16} />
+                                            </Button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        )}
                     </table>
                 </CardContent>
             </Card>
 
+            <div className="flex justify-end">
+                <Button onClick={handleAddDriver} variant="outline" className="gap-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
+                    <Plus size={16} />
+                    Додати водія
+                </Button>
+            </div>
+
             {/* Portal-like Tooltip Rendered at Root Level to avoid Overflow Clipping */}
-            {hoveredHeader && (
-                <div
-                    className="fixed z-[100] w-64 p-3 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-700 text-left font-normal flex flex-col gap-2 pointer-events-none animate-in fade-in zoom-in-95 duration-200"
-                    style={{
-                        left: `${Math.min(hoveredHeader.rect.left, window.innerWidth - 270)}px`, // Prevent overflow right
-                        top: `${hoveredHeader.rect.bottom + 4}px`
-                    }}
-                >
-                    <div className="font-bold text-zinc-900 dark:text-zinc-100 border-b border-zinc-100 dark:border-zinc-800 pb-1 mb-1">
-                        {hoveredHeader.meta.name}
-                    </div>
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-                        <span>Unit:</span>
-                        <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{hoveredHeader.meta.unit}</span>
+            {
+                hoveredHeader && (
+                    <div
+                        className="fixed z-[100] w-64 p-3 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-700 text-left font-normal flex flex-col gap-2 pointer-events-none animate-in fade-in zoom-in-95 duration-200"
+                        style={{
+                            left: `${Math.min(hoveredHeader.rect.left, window.innerWidth - 270)}px`, // Prevent overflow right
+                            top: `${hoveredHeader.rect.bottom + 4}px`
+                        }}
+                    >
+                        <div className="font-bold text-zinc-900 dark:text-zinc-100 border-b border-zinc-100 dark:border-zinc-800 pb-1 mb-1">
+                            {hoveredHeader.meta.name}
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                            <span>Unit:</span>
+                            <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{hoveredHeader.meta.unit}</span>
 
-                        {hoveredHeader.meta.pricePerUnit > 0 && (
-                            <>
-                                <span>Price per unit:</span>
-                                <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                    {hoveredHeader.meta.pricePerUnit} {hoveredHeader.meta.currency || 'EUR'}
-                                </span>
-                            </>
-                        )}
+                            {hoveredHeader.meta.pricePerUnit > 0 && (
+                                <>
+                                    <span>Price per unit:</span>
+                                    <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right font-bold text-emerald-600 dark:text-emerald-400">
+                                        {hoveredHeader.meta.pricePerUnit} {hoveredHeader.meta.currency || 'EUR'}
+                                    </span>
+                                </>
+                            )}
 
-                        {hoveredHeader.meta.netWeight > 0 && (
-                            <>
-                                <span>In package:</span>
-                                <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{hoveredHeader.meta.netWeight} kg</span>
-                            </>
-                        )}
+                            {hoveredHeader.meta.netWeight > 0 && (
+                                <>
+                                    <span>In package:</span>
+                                    <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{hoveredHeader.meta.netWeight} kg</span>
+                                </>
+                            )}
 
-                        {/* Show unitPerCardboard if unit is not kg/g */}
-                        {hoveredHeader.meta.unit && !['kg', 'кг', 'g', 'г'].includes(hoveredHeader.meta.unit.toLowerCase()) && hoveredHeader.meta.unitPerCardboard > 0 && (
-                            <>
-                                <span>In package:</span>
-                                <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">
-                                    {hoveredHeader.meta.unitPerCardboard} {hoveredHeader.meta.unit}
-                                </span>
-                            </>
-                        )}
+                            {/* Show unitPerCardboard if unit is not kg/g */}
+                            {hoveredHeader.meta.unit && !['kg', 'кг', 'g', 'г'].includes(hoveredHeader.meta.unit.toLowerCase()) && hoveredHeader.meta.unitPerCardboard > 0 && (
+                                <>
+                                    <span>In package:</span>
+                                    <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">
+                                        {hoveredHeader.meta.unitPerCardboard} {hoveredHeader.meta.unit}
+                                    </span>
+                                </>
+                            )}
 
-                        {/* Show packaging from additionalInfo */}
-                        {hoveredHeader.meta.additionalInfo && (
-                            <>
-                                <span>Packaging:</span>
-                                <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right truncate" title={hoveredHeader.meta.additionalInfo}>
-                                    {hoveredHeader.meta.additionalInfo}
-                                </span>
-                            </>
-                        )}
+                            {/* Show packaging from additionalInfo */}
+                            {hoveredHeader.meta.additionalInfo && (
+                                <>
+                                    <span>Packaging:</span>
+                                    <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right truncate" title={hoveredHeader.meta.additionalInfo}>
+                                        {hoveredHeader.meta.additionalInfo}
+                                    </span>
+                                </>
+                            )}
 
 
 
-                        <div className="col-span-2 pt-1 mt-1 border-t border-zinc-100 dark:border-zinc-800 text-[10px] text-zinc-400">
-                            ID: {hoveredHeader.meta.id}
+                            <div className="col-span-2 pt-1 mt-1 border-t border-zinc-100 dark:border-zinc-800 text-[10px] text-zinc-400">
+                                ID: {hoveredHeader.meta.id}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
 
 

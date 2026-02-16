@@ -263,25 +263,68 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
         // Populate Headers from ALL existing products (Fakturownia)
         const allProducts = await getFakturowniaProducts();
 
+        // Load local product metadata for fallback
+        const metadata = await db.select().from(productMetadata);
+        const metadataMap = new Map<string, typeof metadata[0]>();
+        metadata.forEach(m => metadataMap.set(m.id, m));
+
         const productLookup = new Map();
         const headerKeys = new Set<string>();
 
         allProducts.forEach(p => {
-            productLookup.set(p.id, p);
-            productLookup.set(p.name, p);
+            // Force weight aggregation
+            const unitLabel = '(кг)';
 
-            // Use product Name as the header key strictly
-            const key = p.name;
+            const key = `${p.name} [ID:${p.id}]`;
+            // Store parse logic for later use if needed, but we rely on item mostly
+            productLookup.set(p.id, p);
+            productLookup.set(key, p);
+
             headerKeys.add(key);
         });
 
+        // --- NEW LOGIC: Scan orders for products that might be missing from Fakturownia ---
+        filteredOrders.forEach(order => {
+            const items = Array.isArray(order.items) ? (order.items as any[]) : [];
+            items.forEach(item => {
+                const key = item.name;
+                const productId = item.productId || 'unknown';
+                const complexKey = `${key} [ID:${productId}]`;
+
+                // Only proceed if this specific product (by ID) is not yet in headers
+                if (key && !headerKeys.has(complexKey)) {
+                    const meta = metadataMap.get(productId);
+
+                    // We need to set the lookup for the COMPLEX key
+                    productLookup.set(complexKey, {
+                        id: productId,
+                        name: key,
+                        // Force weight
+                        agregationResult: 'weight',
+                        netWeight: Number(item.netWeight) || 0,
+                        unitPerCardboard: Number(item.unitPerCardboard) || 0,
+                        // Use position from metadata if available to keep sorting consistent
+                        position: meta?.position ?? 0,
+                        additionalInfo: item.additionalInfo
+                    });
+
+                    headerKeys.add(complexKey);
+                }
+            });
+        });
+
         // Sort Headers
-        const sortedKeys = Array.from(headerKeys).sort((a, b) => a.localeCompare(b, 'uk'));
+        const sortedKeys = Array.from(headerKeys).sort((a, b) => {
+            const prodA = productLookup.get(a);
+            const prodB = productLookup.get(b);
+            const posA = prodA?.position || 0;
+            const posB = prodB?.position || 0;
 
-        const headerRow = ['order_id', 'email', 'market_name', 'weight', ...sortedKeys];
-
-        // Prepare Rows
-        const dataRows: any[][] = [];
+            if (posA !== posB) {
+                return posB - posA; // Higher position first
+            }
+            return a.localeCompare(b, 'uk');
+        });
 
         // Helper to get column letter (0-based index)
         const getColLetter = (n: number) => {
@@ -293,136 +336,170 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
             return s;
         };
 
+        // Simplified Header Row
+        const headerRow = ['Клієнт', 'Вага', ...sortedKeys.map(k => {
+            const p = productLookup.get(k);
+            const unit = p?.unit || 'kg';
+            const isWeight = unit === 'kg' || unit === 'g' || unit === 'кг' || (p?.netWeight && p.netWeight > 0);
+            return `${k} (${isWeight ? 'кг' : 'шт'})`;
+        })];
+
+        // Prepare Rows
+        const dataRows: any[][] = [];
+
         for (let i = 0; i < filteredOrders.length; i++) {
             const order = filteredOrders[i];
             const items = Array.isArray(order.items) ? (order.items as any[]) : [];
-
-            // Map to store weight per product key for this order
             const orderWeights = new Map<string, number>();
 
+            // Calculate product weights
             for (const item of items) {
-                // Resolve product
-                let product = productLookup.get(item.productId);
-                if (!product && item.name) product = productLookup.get(item.name); // Fallback by name
+                // Determine product
+                // First try to find by ID to get the primary key from lookup
+                let primaryKey = null;
 
-                // Determine key based on product info or item info
-                // Use product name as key to match headers
-                const key = product?.name || item.name;
+                // We need to find which key in headerKeys corresponds to this product ID
+                for (const k of sortedKeys) {
+                    const p = productLookup.get(k);
+                    if (p && String(p.id) === String(item.productId)) {
+                        primaryKey = k;
+                        break;
+                    }
+                }
 
-                // Only add data if this key represents an existing product column
-                if (headerKeys.has(key)) {
+                // Fallback: match by name
+                if (!primaryKey && item.name) {
+                    for (const k of sortedKeys) {
+                        if (k.startsWith(item.name + ' [ID:')) {
+                            primaryKey = k;
+                            break;
+                        }
+                    }
+                }
+
+                if (primaryKey) {
+                    const product = productLookup.get(primaryKey);
                     const qty = Number(item.quantity) || 0;
+                    // STRENGTHENED UNIT CHECK LOGIC
+                    const rawUnit = String(item.unit || product?.unit || '').trim().toLowerCase();
+                    const isWeightUnit = rawUnit === 'kg' || rawUnit === 'g' || rawUnit === 'кг' || rawUnit === 'г';
+
                     let valueToAdd = 0;
 
-                    const aggregationType = product?.agregationResult;
-
-                    if (aggregationType === 'cardboard') {
-                        // If aggregation type is cardboard, we just sum the quantity (number of packs/items)
+                    if (isWeightUnit) {
+                        // IT IS WEIGHT: use quantity directly
                         valueToAdd = qty;
                     } else {
-                        // Default to weight (if 'weight' or undefined/other)
-                        let weightPerPack = 0;
+                        // IT IS PIECES: use package count * weight per package
+                        // Weight = Packages * WeightPerPackage
+                        let pkgCount = item.packageCount;
 
-                        // Priority for weight calculation
-                        if (item.netWeight) weightPerPack = Number(item.netWeight);
-                        else if (item.cardboardWeight) weightPerPack = Number(item.cardboardWeight);
-                        else if (product?.netWeight) weightPerPack = Number(product.netWeight);
-                        else if (product?.netWeight === 0 && product?.unit === 'kg') weightPerPack = 1; // Fallback for pure kg items
+                        if (!pkgCount) {
+                            // Fallback 1: Try parse additionalInfo
+                            const parsed = parseInt(item.additionalInfo);
+                            if (!isNaN(parsed)) {
+                                pkgCount = parsed;
+                            } else {
+                                // Fallback 2: Calculate from units per cardboard
+                                const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
+                                pkgCount = inPack > 0 ? (qty / inPack) : 0;
+                            }
+                        }
 
-                        valueToAdd = qty * weightPerPack;
+                        // Determine weight per package
+                        const weightPerPack = Number(item.netWeight || product?.netWeight || 0);
+                        valueToAdd = (pkgCount || 0) * weightPerPack;
                     }
 
-                    const current = orderWeights.get(key) || 0;
-                    orderWeights.set(key, current + valueToAdd);
+                    const current = orderWeights.get(primaryKey) || 0;
+                    orderWeights.set(primaryKey, current + valueToAdd);
                 }
             }
 
-            // Build Row
-            // Formula for total weight: SUM of product columns
-            // Header is row 1. Data starts at row 2.
-            const rowIndex = i + 2;
+            // Calculate row total weight
+            let rowTotalWeight = 0;
+            for (const item of items) {
+                const qty = Number(item.quantity) || 0;
 
-            // Products start at index 4 (Column E)
-            const columnMultipliers = sortedKeys.map(key => {
-                const product = productLookup.get(key) || [...productLookup.values()].find(p => p.name === key);
-                const aggregationType = product?.agregationResult;
-
-                if (aggregationType === 'cardboard') {
-                    // Multiplier is the weight of the pack
-                    // We try netWeight first, then unitPerCardboard (if that's where weight is stored), otherwise 1
-                    let weight = Number(product?.netWeight) || 0;
-                    if (weight === 0) weight = Number(product?.unitPerCardboard) || 0;
-                    if (weight === 0) weight = 1; // Fallback to 1 explicitly to avoid 0 weight
-                    return weight;
+                // Find product for fallback
+                let product = null;
+                // Try to find by ID
+                if (item.productId) product = productLookup.get(Number(item.productId));
+                else {
+                    // Startswith lookup (less reliable but fallback)
+                    for (const k of sortedKeys) {
+                        if (k.startsWith(item.name + ' [ID:')) {
+                            product = productLookup.get(k);
+                            break;
+                        }
+                    }
                 }
-                return 1; // For normal weight items, cell value is already total weight
-            });
 
-            // Construct formula: =PRODUCT_COL*MULTIPLIER + ...
-            const formulaParts: string[] = [];
+                // STRENGTHENED UNIT CHECK LOGIC FOR TOTAL ROW
+                const rawUnit = String(item.unit || product?.unit || '').trim().toLowerCase();
+                const isWeightUnit = rawUnit === 'kg' || rawUnit === 'g' || rawUnit === 'кг' || rawUnit === 'г';
 
-            sortedKeys.forEach((_, idx) => {
-                const colLetter = getColLetter(4 + idx);
-                const multiplier = columnMultipliers[idx];
+                let weight = 0;
 
-                // Optimization: if cell is 0, we don't strictly need to include it, 
-                // but we can't know the cell value inside the formula construction easily without complicating logic.
-                // Just simpler to include all columns: E2*10 + F2*1 + ...
-                // Actually, Google Sheets formula length limit is ~50k chars. 
-                // With ~100 products, formula is roughly 100 * 10 chars = 1000 chars. Safe.
-
-                if (multiplier !== 1) {
-                    formulaParts.push(`(${colLetter}${rowIndex}*${multiplier})`);
+                if (isWeightUnit) {
+                    weight = qty;
                 } else {
-                    formulaParts.push(`${colLetter}${rowIndex}`);
+                    // Pieces -> Weight
+                    let pkgCount = item.packageCount;
+                    if (!pkgCount) {
+                        const parsed = parseInt(item.additionalInfo);
+                        if (!isNaN(parsed)) pkgCount = parsed;
+                        else {
+                            const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
+                            pkgCount = inPack > 0 ? (qty / inPack) : 0;
+                        }
+                    }
+                    const weightPerPack = Number(item.netWeight || product?.netWeight || 0);
+                    weight = (pkgCount || 0) * weightPerPack;
                 }
-            });
 
-            const formula = formulaParts.length > 0 ? `=${formulaParts.join('+')}` : '=0';
+                rowTotalWeight += weight;
+            }
 
-            const row: (string | number)[] = [
-                order.id,
-                order.customerEmail,
-                order.customerName,
-                formula
+            const row: any[] = [
+                order.customerName || 'Unknown',
+                rowTotalWeight
             ];
 
             for (const key of sortedKeys) {
                 const val = orderWeights.get(key);
-                // Push number if exists, otherwise empty string
                 row.push(val !== undefined ? val : 0);
             }
 
             dataRows.push(row);
         }
 
-        // --- ADDED FOOTER ROW Logic ---
-        // We need a formula for each column from 'weight' (index 3) to the last product.
-        // Data starts at Row 2.
-        // Last data row is: 2 + filteredOrders.length - 1  => 1 + filteredOrders.length
-        // Footer row index will be: 2 + filteredOrders.length
+        // Add Logic for Totals (Formulas)
+        const footerRow: any[] = ['TOTAL', 0]; // Index 1 is Weight Total
 
-        const firstDataRow = 2; // Rows are 1-based in sheets
-        const lastDataRow = 1 + filteredOrders.length;
+        // Products start at index 2
+        for (let k = 0; k < sortedKeys.length; k++) {
+            footerRow.push(0);
+        }
 
-        const footerRow: (string | number)[] = ['TOTAL', '', '', ''];
+        if (dataRows.length > 0) {
+            // Row indices for formulas are 1-based.
+            // Header is Row 1. Data starts Row 2.
+            // End Data Row is 1 + dataRows.length.
 
-        // Col D (Weight) Formula
-        // =SUM(D2:D5)
-        const weightColLetter = getColLetter(3);
-        footerRow[3] = `=SUM(${weightColLetter}${firstDataRow}:${weightColLetter}${lastDataRow})`;
+            const startRow = 2;
+            const endRow = 1 + dataRows.length;
 
-        // Product Columns Formulas
-        sortedKeys.forEach((_, idx) => {
-            const colIndex = 4 + idx;
-            const colLetter = getColLetter(colIndex);
-            // =SUM(E2:E5)
-            const formula = `=SUM(${colLetter}${firstDataRow}:${colLetter}${lastDataRow})`;
-            footerRow.push(formula);
-        });
+            footerRow[1] = `=SUM(B${startRow}:B${endRow})`;
 
-        // Add footer to rows
-        const allRows = [headerRow, ...dataRows, footerRow];
+            // Formulas for Products (starting Column C - Index 2)
+            sortedKeys.forEach((_, idx) => {
+                const colLetter = getColLetter(2 + idx); // 0=A, 1=B, 2=C...
+                footerRow[2 + idx] = `=SUM(${colLetter}${startRow}:${colLetter}${endRow})`;
+            });
+        }
+
+        const values = [headerRow, ...dataRows, footerRow];
 
         // Export to Google Sheets
         const sheetId = process.env.GOOGLE_SHEET_ORDERS_ID;
@@ -435,27 +512,27 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
         const title = `Звіт ${formatDate(start)} - ${formatDate(end)} (${formatDate(new Date())} ${formatTime(new Date())})`;
 
         const sheetIdNum = await createSheet(sheetId, title);
-        await replaceSheetContent(sheetId, `${title}!A1`, allRows);
+        await replaceSheetContent(sheetId, `${title}!A1`, values);
 
         // Apply formatting
         if (sheetIdNum !== null) {
             const requests: any[] = [];
 
-            // Format for weight column (column D, index 3)
+            // Format for weight column (column B, index 1)
             // It's always kg
             requests.push({
                 repeatCell: {
                     range: {
                         sheetId: sheetIdNum,
                         startRowIndex: 1, // Skip header
-                        startColumnIndex: 3,
-                        endColumnIndex: 4
+                        startColumnIndex: 1,
+                        endColumnIndex: 2
                     },
                     cell: {
                         userEnteredFormat: {
                             numberFormat: {
                                 type: 'NUMBER',
-                                pattern: '0 "kg"'
+                                pattern: '0.00 "kg"'
                             }
                         }
                     },
@@ -463,17 +540,15 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
                 }
             });
 
-            // Format for Product Columns (index 4 to 4+length)
+            // Format for Product Columns (index 2 to 2+length)
             sortedKeys.forEach((key, idx) => {
-                const product = productLookup.get(key) || [...productLookup.values()].find(p => p.name === key);
-                const aggregationType = product?.agregationResult;
+                const colIndex = 2 + idx;
 
-                const colIndex = 4 + idx;
-                let pattern = '0 "kg"'; // Default
+                const p = productLookup.get(key);
+                const unit = p?.unit || 'kg';
+                const isWeight = unit === 'kg' || unit === 'g' || unit === 'кг' || (p?.netWeight && p.netWeight > 0);
 
-                if (aggregationType === 'cardboard') {
-                    pattern = '0';
-                }
+                const pattern = isWeight ? '0.00 "kg"' : '0 "шт"';
 
                 requests.push({
                     repeatCell: {
@@ -518,33 +593,37 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
                     }
                 });
 
-                // Add Weight Column (Column D, index 3) bold formatting for all rows (Header to Footer)
-                const totalRows = filteredOrders.length + 2; // Header + Data + Footer
+                // Add Weight Column (Column B, index 1) bold formatting for all rows (Header to Footer)
+                const totalRows = dataRows.length + 2; // Header + Data + Footer
                 requests.push({
                     repeatCell: {
                         range: {
                             sheetId: sheetIdNum,
                             startRowIndex: 1, // Skip header
                             endRowIndex: totalRows,
-                            startColumnIndex: 3,
-                            endColumnIndex: 4
+                            startColumnIndex: 1,
+                            endColumnIndex: 2
                         },
                         cell: {
                             userEnteredFormat: {
                                 textFormat: {
                                     bold: true,
                                     fontSize: 12
+                                },
+                                numberFormat: {
+                                    type: 'NUMBER',
+                                    pattern: '0.00 "kg"'
                                 }
                             }
                         },
-                        fields: 'userEnteredFormat.textFormat(bold,fontSize)'
+                        fields: 'userEnteredFormat.textFormat(bold,fontSize),userEnteredFormat.numberFormat'
                     }
                 });
 
                 // Add Zebra Striping (Alternating Grey Rows)
                 // Data starts at Row index 1 (Header is 0)
                 // We want to color every OTHER row. e.g. 1, 3, 5...
-                for (let i = 0; i < filteredOrders.length; i++) {
+                for (let i = 0; i < dataRows.length; i++) {
                     if (i % 2 === 1) { // Color odd rows (0-based index relative to data array)
                         const rowIndex = 1 + i; // Convert to sheet row index (1-based because header is 0)
                         requests.push({
@@ -572,7 +651,7 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
                 }
 
                 // Add footer bold as well
-                const lastRowIndex = 1 + filteredOrders.length;
+                const lastRowIndex = 1 + dataRows.length;
                 requests.push({
                     repeatCell: {
                         range: {
@@ -629,5 +708,484 @@ export async function updateProductMetadata(id: string, data: { image?: string; 
     } catch (error) {
         console.error('Failed to update product metadata:', error);
         return { success: false, error: 'Failed to update metadata' };
+    }
+}
+
+export async function getAggregationData(startDate: string, endDate: string) {
+    await verifyAuth();
+    try {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setUTCHours(23, 59, 59, 999);
+
+        // Fetch Orders
+        const filteredOrders = await db.select()
+            .from(orders)
+            .where(and(
+                gte(orders.orderDate, start),
+                lte(orders.orderDate, end),
+                eq(orders.status, 'completed')
+            ));
+
+        if (filteredOrders.length === 0) {
+            return { success: false, error: 'Замовлень не знайдено за цей період' };
+        }
+
+        // Populate Headers from ALL existing products (Fakturownia)
+        const allProducts = await getFakturowniaProducts();
+
+        // Load local product metadata for fallback
+        const metadata = await db.select().from(productMetadata);
+        const metadataMap = new Map<string, typeof metadata[0]>();
+        metadata.forEach(m => metadataMap.set(m.id, m));
+
+        const productLookup = new Map();
+        const headerKeys = new Set<string>();
+
+        allProducts.forEach(p => {
+            // Check metadata for aggregation result
+            // Force weight aggregation
+            const unitLabel = '(кг)';
+
+            const key = `${p.name} [ID:${p.id}]`;
+            // Store parse logic for later use if needed, but we rely on item mostly
+            productLookup.set(p.id, p);
+            productLookup.set(key, p);
+            headerKeys.add(key);
+        });
+
+        // Scan orders for products that might be missing from Fakturownia
+        filteredOrders.forEach(order => {
+            const items = Array.isArray(order.items) ? (order.items as any[]) : [];
+            items.forEach(item => {
+                const key = item.name;
+                const productId = item.productId || 'unknown';
+                const complexKey = `${key} [ID:${productId}]`;
+
+                if (key && !headerKeys.has(complexKey)) {
+                    const meta = metadataMap.get(productId);
+
+                    productLookup.set(complexKey, {
+                        id: productId,
+                        name: key,
+                        agregationResult: 'weight', // Force weight
+                        netWeight: Number(item.netWeight) || 0,
+                        unitPerCardboard: Number(item.unitPerCardboard) || 0,
+                        position: meta?.position ?? 0,
+                        additionalInfo: item.additionalInfo
+                    });
+
+                    headerKeys.add(complexKey);
+                }
+            });
+        });
+
+        // Sort Headers by Position (descending - higher first) then Name
+        const sortedKeys = Array.from(headerKeys).sort((a, b) => {
+            const prodA = productLookup.get(a);
+            const prodB = productLookup.get(b);
+            const posA = prodA?.position || 0;
+            const posB = prodB?.position || 0;
+
+            if (posA !== posB) {
+                return posB - posA; // Higher position first
+            }
+            return a.localeCompare(b, 'uk');
+        });
+
+        // Simplified Header Row: Customer Name, Total Weight, Products...
+        // Simplified Header Row
+        const headerRow = ['Клієнт', 'Вага', ...sortedKeys.map(k => {
+            const p = productLookup.get(k);
+            const unit = p?.unit || 'kg';
+            const rawUnit = String(unit).trim().toLowerCase();
+            const isService = ['godz', 'h', 'min', 'm', 'usł', 'srv', 'km'].includes(rawUnit);
+            const isWeight = !isService && (rawUnit === 'kg' || rawUnit === 'g' || rawUnit === 'кг' || (p?.netWeight && p.netWeight > 0));
+            return `${k} (${unit})`;
+        })];
+
+        // Prepare Header Metadata for Tooltips
+        const headerMetadata = [null, null, ...sortedKeys.map(k => {
+            const p = productLookup.get(k);
+            return p ? {
+                id: p.id,
+                name: p.name,
+                unit: p.unit,
+                netWeight: p.netWeight,
+                unitPerCardboard: p.unitPerCardboard,
+                pricePerUnit: p.pricePerUnit,
+                currency: p.currency, // Added
+                agregationResult: p.agregationResult,
+                additionalInfo: p.additionalInfo
+            } : null;
+        })];
+
+        // Prepare Rows
+        const dataRows: any[][] = [];
+        const packageCountRows: any[][] = [];
+
+
+        for (let i = 0; i < filteredOrders.length; i++) {
+            const order = filteredOrders[i];
+            const items = Array.isArray(order.items) ? (order.items as any[]) : [];
+            const orderWeights = new Map<string, number>();
+            const orderPackageCounts = new Map<string, { count: number, packageType: string }>();
+
+            for (const item of items) {
+                // Determine product
+                // First try to find by ID to get the primary key from lookup
+                let primaryKey = null;
+
+                // We need to find which key in headerKeys corresponds to this product ID
+                for (const k of sortedKeys) {
+                    const p = productLookup.get(k);
+                    if (p && String(p.id) === String(item.productId)) {
+                        primaryKey = k;
+                        break;
+                    }
+                }
+
+                // Fallback: try match by name if ID is unknown/missing
+                if (!primaryKey && item.name) {
+                    for (const k of sortedKeys) {
+                        if (k.startsWith(item.name + ' [ID:')) {
+                            primaryKey = k;
+                            break;
+                        }
+                    }
+                }
+
+                if (primaryKey) {
+                    const product = productLookup.get(primaryKey);
+                    const qty = Number(item.quantity) || 0;
+
+                    const rawUnit = String(item.unit || product?.unit || '').trim().toLowerCase();
+                    const isItemWeightUnit = rawUnit === 'kg' || rawUnit === 'g' || rawUnit === 'кг' || rawUnit === 'г';
+                    const hasNetWeight = (item.netWeight && Number(item.netWeight) > 0) || (product?.netWeight && Number(product.netWeight) > 0);
+
+                    let valueToAdd = 0;
+                    let pkgCountToAdd = 0;
+
+                    // --- Value calculation (differs by unit type) ---
+                    if (isItemWeightUnit) {
+                        // Weight-based: quantity is already weight
+                        valueToAdd = qty;
+                    } else if (hasNetWeight) {
+                        // Piece-based with known weight: calculate total weight
+                        // Need pkg count first for weight calculation
+                        let pkgForWeight = Number(item.packageCount) || 0;
+                        if (pkgForWeight <= 0) {
+                            const parsed = parseInt(item.additionalInfo);
+                            if (!isNaN(parsed) && parsed > 0) pkgForWeight = parsed;
+                            else {
+                                const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
+                                pkgForWeight = inPack > 0 ? (qty / inPack) : 0;
+                            }
+                        }
+                        const weightPerPack = Number(item.netWeight || product?.netWeight || 0);
+                        valueToAdd = (pkgForWeight || 0) * weightPerPack;
+                    } else {
+                        // Piece-based without weight: just use quantity
+                        valueToAdd = qty;
+                    }
+
+                    // --- Package count (UNIVERSAL for all unit types) ---
+                    // Priority 1: Explicit packageCount from order (set at checkout)
+                    // Check if packageCount is defined (even if 0), not just truthy
+                    if (item.packageCount !== null && item.packageCount !== undefined) {
+                        pkgCountToAdd = Number(item.packageCount);
+                    } else {
+                        // Priority 2: Parse from additionalInfo (e.g. "3 wor" → 3, "2 kart" → 2)
+                        const parsed = parseInt(item.additionalInfo);
+                        if (!isNaN(parsed) && parsed > 0) {
+                            pkgCountToAdd = parsed;
+                        } else {
+                            // Priority 3: Mathematical fallback
+                            if (isItemWeightUnit) {
+                                // For weight: packages = total weight / weight per package
+                                const weightPerPack = Number(item.netWeight || product?.netWeight || 0);
+                                pkgCountToAdd = weightPerPack > 0 ? (qty / weightPerPack) : (qty > 0 ? 1 : 0);
+                            } else {
+                                // For pieces: packages = total pieces / pieces per package
+                                const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
+                                pkgCountToAdd = inPack > 0 ? (qty / inPack) : (qty > 0 ? 1 : 0);
+                            }
+                        }
+                    }
+
+                    const current = orderWeights.get(primaryKey) || 0;
+                    orderWeights.set(primaryKey, current + valueToAdd);
+
+                    const currentPkg = orderPackageCounts.get(primaryKey) || { count: 0, packageType: 'kart' };
+                    // If multiple items, we might overwrite type, but usually it's consistent.
+                    // Prefer existing type if not 'kart', or new type if provided.
+                    const existingType = currentPkg.packageType;
+                    const newType = item.packageType || 'kart';
+                    // Simple logic: if newType is not 'kart', use it. Else stick with existing unless it's also 'kart'.
+                    // Actually, if we have a real type 'wor', we want to keep it.
+                    const finalType = (newType !== 'kart') ? newType : existingType;
+
+                    orderPackageCounts.set(primaryKey, {
+                        count: currentPkg.count + pkgCountToAdd,
+                        packageType: finalType
+                    });
+                }
+            }
+
+            // Calculate Total Weight for this row
+            let rowTotalWeight = 0;
+
+            for (const item of items) {
+                const qty = Number(item.quantity) || 0;
+
+                // Find product
+                let product = null;
+                if (item.productId) product = productLookup.get(Number(item.productId));
+                else {
+                    for (const k of sortedKeys) {
+                        if (k.startsWith(item.name + ' [ID:')) {
+                            product = productLookup.get(k);
+                            break;
+                        }
+                    }
+                }
+
+                const rawUnit = String(item.unit || product?.unit || '').trim().toLowerCase();
+                const isService = ['godz', 'h', 'min', 'm', 'usł', 'srv', 'km'].includes(rawUnit);
+                const isItemWeightUnit = rawUnit === 'kg' || rawUnit === 'g' || rawUnit === 'кг' || rawUnit === 'г';
+                const hasNetWeight = !isService && ((item.netWeight && Number(item.netWeight) > 0) || (product?.netWeight && Number(product.netWeight) > 0));
+
+                let weight = 0;
+
+                if (isItemWeightUnit) {
+                    weight = qty;
+                } else if (hasNetWeight) {
+                    let pkgCount = item.packageCount;
+                    if (!pkgCount) {
+                        const parsed = parseInt(item.additionalInfo);
+                        if (!isNaN(parsed)) pkgCount = parsed;
+                        else {
+                            const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
+                            pkgCount = inPack > 0 ? (qty / inPack) : 0;
+                        }
+                    }
+                    const weightPerPack = Number(item.netWeight || product?.netWeight || 0);
+                    weight = (pkgCount || 0) * weightPerPack;
+                } else {
+                    // Case 3: Pure pieces. DO NOT ADD TO TOTAL WEIGHT.
+                    weight = 0;
+                }
+
+                rowTotalWeight += weight;
+            }
+
+
+            let rowTotalPkgCount = 0;
+            orderPackageCounts.forEach(val => {
+                rowTotalPkgCount += val.count;
+            });
+
+            const row: any[] = [
+                order.customerName || 'Unknown', // Column 0
+                rowTotalWeight                   // Column 1
+            ];
+
+            const pkgRow: any[] = [null, rowTotalPkgCount];
+
+            for (const key of sortedKeys) {
+                const val = orderWeights.get(key);
+                row.push(val !== undefined ? val : 0);
+                const pkg = orderPackageCounts.get(key);
+                pkgRow.push(pkg ? pkg : { count: 0, packageType: 'kart' });
+            }
+
+            dataRows.push(row);
+            packageCountRows.push(pkgRow);
+        }
+
+
+
+        // Footer Row
+        // Column 0: TOTAL label
+        // Column 1: Total Weight Sum
+        // Column 2+: Product Sums
+        const footerRow: any[] = ['TOTAL', 0];
+
+        // Initialize product totals
+        for (let k = 0; k < sortedKeys.length; k++) {
+            footerRow.push(0);
+        }
+
+        // Calculate columns sums
+        dataRows.forEach(row => {
+            // Weight column is index 1 now
+            footerRow[1] = (footerRow[1] as number) + (Number(row[1]) || 0);
+
+            // Product columns start at index 2
+            for (let j = 0; j < sortedKeys.length; j++) {
+                const colIndex = 2 + j;
+                footerRow[colIndex] = (footerRow[colIndex] as number) + (Number(row[colIndex]) || 0);
+            }
+        });
+
+        // Calculate columns sums for package counts
+        const packageCountFooter: any[] = ['TOTAL', 0];
+        for (let k = 0; k < sortedKeys.length; k++) {
+            packageCountFooter.push(0);
+        }
+
+        // Initialize package types map for footer columns
+        const footerPackageTypes = new Map<number, string>();
+
+        packageCountRows.forEach((row: any[]) => {
+            // Summary for index 1 (Total packages)
+            if (row[1] !== null) {
+                packageCountFooter[1] = (packageCountFooter[1] as number) + (Number(row[1]) || 0);
+            }
+
+            for (let j = 0; j < sortedKeys.length; j++) {
+                const colIndex = 2 + j;
+                const cell = row[colIndex];
+                const count = typeof cell === 'object' && cell !== null ? cell.count : (Number(cell) || 0);
+                const type = typeof cell === 'object' && cell !== null ? cell.packageType : 'kart';
+
+                packageCountFooter[colIndex] = (packageCountFooter[colIndex] as number) + count;
+
+                // Store package type, preferring non-'kart' types
+                if (count > 0) {
+                    const existingType = footerPackageTypes.get(colIndex);
+                    // Update if: no type yet, OR existing is 'kart' but new is not
+                    if (!existingType || (existingType === 'kart' && type !== 'kart')) {
+                        footerPackageTypes.set(colIndex, type);
+                    }
+                }
+            }
+        });
+
+        // Convert footer numbers to objects with package types
+        for (let j = 0; j < sortedKeys.length; j++) {
+            const colIndex = 2 + j;
+            const totalCount = packageCountFooter[colIndex] as number;
+            const type = footerPackageTypes.get(colIndex) || 'kart';
+            if (totalCount > 0) {
+                packageCountFooter[colIndex] = { count: totalCount, packageType: type };
+            }
+        }
+
+        return {
+            success: true,
+            data: {
+                headers: headerRow,
+                headerMetadata: headerMetadata,
+                rows: dataRows,
+                packageCountRows: packageCountRows,
+                footer: footerRow,
+                packageCountFooter: packageCountFooter,
+                // Store order metadata for each row to enable invoice generation
+                orderMetadata: filteredOrders.map(order => ({
+                    orderId: order.id,
+                    customerName: order.customerName,
+                    customerEmail: order.customerEmail,
+                    orderDate: order.orderDate,
+                    originalItems: order.items, // Original order items with all details
+                    fakturowniaClientId: order.fakturowniaClientId,
+                    currency: order.currency
+                }))
+            }
+        };
+
+    } catch (error) {
+        console.error('Failed to get aggregation data:', error);
+        return { success: false, error: 'Не вдалося отримати дані для звіту' };
+    }
+}
+
+export async function updateOrderCell(orderId: string, field: string, value: any) {
+    await verifyAuth();
+    try {
+        console.log(`Updating order ${orderId}, field: ${field}, value: ${value}`);
+
+        if (field === 'Invoice Status') {
+            await db.update(orders).set({ invoiceStatus: value }).where(eq(orders.id, orderId));
+            return { success: true };
+        }
+
+        if (field === 'Invoice Result') {
+            await db.update(orders).set({ invoice: value }).where(eq(orders.id, orderId));
+            return { success: true };
+        }
+
+        if (field === 'Client ID') {
+            const clientId = Number(value);
+            if (!isNaN(clientId)) {
+                await db.update(orders).set({ fakturowniaClientId: clientId }).where(eq(orders.id, orderId));
+                return { success: true };
+            }
+            return { success: false, error: 'Invalid Client ID' };
+        }
+
+        // Handle Product Updates
+        const idMatch = field.match(/\[ID:(.*?)\]/);
+        if (idMatch) {
+            const productId = idMatch[1];
+
+            // Fetch the order
+            const filteredOrders = await db.select().from(orders).where(eq(orders.id, orderId));
+            const order = filteredOrders[0];
+
+            if (!order) return { success: false, error: 'Order not found' };
+
+            const items = Array.isArray(order.items) ? (order.items as any[]) : [];
+            const itemIndex = items.findIndex((i: any) => {
+                if (i.productId === productId) return true;
+                if (!i.productId && productId === 'unknown') {
+                    // Extract name by splitting at " [ID:" since it always separates name and ID
+                    // The format is: "Product Name [ID:unknown] (unit info)"
+                    const nameFromField = field.split(' [ID:')[0];
+                    return i.name === nameFromField;
+                }
+                return false;
+            });
+
+            if (itemIndex === -1) {
+                return { success: false, error: 'Item not found in order' };
+            }
+
+            const item = items[itemIndex];
+            const newValue = Number(value);
+
+            // Check metadata/defaults for this product.
+            const metaResults = await db.select().from(productMetadata).where(eq(productMetadata.id, productId));
+            const meta = metaResults[0];
+            const aggResult = meta?.agregationResult || 'weight'; // default
+
+            if (aggResult === 'cardboard') {
+                // Cell value is Quantity (pcs)
+                items[itemIndex].quantity = newValue;
+            } else {
+                // Cell value is Weight (kg)
+                if (item.unit === 'kg') {
+                    // It's loose weight. Quantity is weight.
+                    items[itemIndex].quantity = newValue;
+                } else {
+                    // It's a box.
+                    if (items[itemIndex].quantity > 0) {
+                        const newNetWeight = newValue / items[itemIndex].quantity;
+                        items[itemIndex].netWeight = newNetWeight;
+                        if (items[itemIndex].cardboardWeight) items[itemIndex].cardboardWeight = newNetWeight;
+                    }
+                }
+            }
+
+            // Save order
+            await db.update(orders).set({ items: items }).where(eq(orders.id, orderId));
+            return { success: true };
+        }
+
+        return { success: false, error: 'Unknown field' };
+
+    } catch (error) {
+        console.error('Failed to update order cell:', error);
+        return { success: false, error: 'Update failed' };
     }
 }

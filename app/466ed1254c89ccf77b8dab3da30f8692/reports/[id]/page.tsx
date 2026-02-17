@@ -15,11 +15,13 @@ import { useParams } from 'next/navigation';
 function EditableCell({
     value,
     onUpdate,
-    unit
+    unit,
+    readOnly
 }: {
     value: string | number,
     onUpdate: (newValue: string) => Promise<boolean>,
-    unit?: string
+    unit?: string,
+    readOnly?: boolean
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [localValue, setLocalValue] = useState(value);
@@ -74,9 +76,11 @@ function EditableCell({
 
     return (
         <div
-            onClick={() => setIsEditing(true)}
+            onClick={() => !readOnly && setIsEditing(true)}
             className={cn(
-                "p-2 min-h-[30px] cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors truncate",
+                "p-2 min-h-[30px] rounded transition-colors truncate",
+                !readOnly && "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800",
+                readOnly && "bg-gray-50/50 dark:bg-zinc-800/50 text-gray-500 cursor-default",
                 (value === '' || value === null) && "text-gray-300 italic"
             )}
             title={String(value)}
@@ -354,12 +358,28 @@ export default function ReportDetailPage() {
                                 console.log(`[PKG CLIENT]   -> Found packageCount in meta.additionalInfo: ${pkgCountFromMeta}, unitPerCardboard=${meta.unitPerCardboard}`);
 
                                 // If we have unitPerCardboard, calculate ratio
-                                // e.g., "3 ggg" with unitPerCardboard=15 means: 3 packages per 15 units = ratio 0.2
-                                if (meta.unitPerCardboard > 0 && pkgCountFromMeta > 0) {
-                                    const ratio = pkgCountFromMeta / meta.unitPerCardboard;
-                                    newPkgCount = weightOrQty * ratio;
-                                    foundFromOriginal = true;
-                                    console.log(`[PKG CLIENT]   -> Using meta ratio: ${pkgCountFromMeta}/${meta.unitPerCardboard} = ${ratio}, newPkgCount=${newPkgCount}`);
+                                // For KG products, we check if netWeight is available to calculate ratio (packages per kg)
+                                // e.g. 10kg corresponds to 2 cartons -> ratio = 2 / 10 = 0.2 cartons/kg
+                                if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
+                                    if (meta.netWeight > 0 && pkgCountFromMeta > 0) {
+                                        const ratio = pkgCountFromMeta / meta.netWeight;
+                                        newPkgCount = weightOrQty * ratio;
+                                        foundFromOriginal = true;
+                                        console.log(`[PKG CLIENT]   -> Using meta KG ratio: ${pkgCountFromMeta}/${meta.netWeight} = ${ratio}, newPkgCount=${newPkgCount}`);
+                                    } else {
+                                        // Fallback if no netWeight: maybe simple division if pkgCount is meant as weight?
+                                        // But user says "10kg -> 2 kart", so likely ratio.
+                                        // If no netWeight, we can't determine ratio. Default to 0?
+                                        // Or maybe pkgCountFromMeta IS the default pack count for 1 unit? Unlikely for KG.
+                                        console.log(`[PKG CLIENT]   -> Cannot calculate KG ratio without netWeight. meta.netWeight=${meta.netWeight}`);
+                                    }
+                                } else {
+                                    // For piecewise products
+                                    if (meta.unitPerCardboard > 0 && pkgCountFromMeta > 0) {
+                                        const ratio = pkgCountFromMeta / meta.unitPerCardboard;
+                                        newPkgCount = weightOrQty * ratio;
+                                        foundFromOriginal = true;
+                                    }
                                 }
                             }
                         }
@@ -574,9 +594,18 @@ export default function ReportDetailPage() {
                         const pkgCountFromMeta = parseFloat(match[1]);
                         packageType = match[2].trim();
 
-                        if (meta.unitPerCardboard > 0 && pkgCountFromMeta > 0) {
-                            const ratio = pkgCountFromMeta / meta.unitPerCardboard;
-                            newPkgCount = weightOrQty * ratio;
+                        if (pkgCountFromMeta > 0) {
+                            if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
+                                if (meta.netWeight > 0) {
+                                    const ratio = pkgCountFromMeta / meta.netWeight;
+                                    newPkgCount = weightOrQty * ratio;
+                                }
+                            } else {
+                                if (meta.unitPerCardboard > 0) {
+                                    const ratio = pkgCountFromMeta / meta.unitPerCardboard;
+                                    newPkgCount = weightOrQty * ratio;
+                                }
+                            }
                         }
                     }
                 }
@@ -1046,9 +1075,21 @@ export default function ReportDetailPage() {
                                                             <EditableCell
                                                                 value={cell}
                                                                 onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, colIdx, newVal)}
-                                                                unit={header === 'Вага' ? 'kg' : meta?.unit}
+                                                                unit={meta?.unit}
+                                                                readOnly={header === 'Вага'}
                                                             />
                                                         </div>
+                                                        {(() => {
+                                                            const pkgData = driverPackageCountRows?.[rowIdx]?.[colIdx];
+                                                            const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
+                                                            const type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
+
+                                                            return count > 0 && (
+                                                                <div className="px-2 text-[10px] text-blue-500 dark:text-blue-400 font-medium">
+                                                                    [{Number(count).toFixed(1)} {type}]
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </div>
                                                 </td>
                                             );

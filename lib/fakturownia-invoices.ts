@@ -139,6 +139,85 @@ export async function createInvoice(invoiceData: InvoiceData): Promise<CreateInv
     }
 }
 
+
+/**
+ * Update an existing invoice in Fakturownia
+ */
+export async function updateInvoice(invoiceId: number, invoiceData: InvoiceData): Promise<CreateInvoiceResponse> {
+    if (!FAKTUROWNIA_API_KEY) {
+        return {
+            success: false,
+            error: 'FAKTUROWNIA_API_KEY is not configured'
+        };
+    }
+
+    try {
+        const url = `${FAKTUROWNIA_API_URL}/invoices/${invoiceId}.json`;
+
+        // Filter out positions without product_id
+        const validPositions = invoiceData.positions.filter(pos => pos.product_id);
+
+        if (validPositions.length === 0) {
+            return {
+                success: false,
+                error: 'Жодної позиції з product_id не знайдено.'
+            };
+        }
+
+        const invoicePayload: any = {
+            api_token: FAKTUROWNIA_API_KEY,
+            invoice: {
+                kind: 'vat',
+                positions: JSON.stringify(validPositions.map(pos => ({
+                    product_id: String(pos.product_id),
+                    quantity: pos.quantity,
+                    additional_info: pos.additional_info || ''
+                })))
+            }
+        };
+
+        if (invoiceData.client_id) {
+            invoicePayload.invoice.client_id = String(invoiceData.client_id);
+        }
+
+        console.log(`Updating invoice ${invoiceId} with payload:`, JSON.stringify(invoicePayload, null, 2));
+
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(invoicePayload)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Failed to update invoice: ${response.status} ${response.statusText}`);
+            console.error('Error details:', errorText);
+            return {
+                success: false,
+                error: `Помилка оновлення фактури: ${response.status}. ${errorText}`
+            };
+        }
+
+        const data = await response.json();
+
+        return {
+            success: true,
+            invoiceId: data.id,
+            invoiceNumber: data.number,
+            invoiceUrl: `${FAKTUROWNIA_API_URL}/invoices/${data.id}`
+        };
+    } catch (error: any) {
+        console.error('Error updating Fakturownia invoice:', error);
+        return {
+            success: false,
+            error: error.message || 'Unknown error occurred'
+        };
+    }
+}
+
 /**
  * Get invoice details from Fakturownia
  */

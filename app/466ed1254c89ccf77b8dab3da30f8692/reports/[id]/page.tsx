@@ -4,7 +4,14 @@ import React, { useState, useEffect } from 'react';
 import { getReport, updateReportData, createInvoiceForReportRow, duplicateReport } from '@/app/actions/reports';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, FileBarChart2, ArrowLeft, Save, FileText, ExternalLink, Copy, Files, AlertTriangle, Trash2, Plus, Truck, FileCheck } from 'lucide-react';
+import {
+    Loader2, FileBarChart2, ArrowLeft, Save, FileText, ExternalLink, Copy, Files, AlertTriangle,
+    RotateCcw,
+    Trash2,
+    Plus,
+    FileCheck,
+    Truck
+} from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../../../components/ui/tooltip";
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -78,7 +85,7 @@ function EditableCell({
         <div
             onClick={() => !readOnly && setIsEditing(true)}
             className={cn(
-                "p-2 min-h-[30px] rounded transition-colors truncate",
+                "p-2 min-h-[30px] rounded transition-colors truncate tabular-nums",
                 !readOnly && "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800",
                 readOnly && "bg-gray-50/50 dark:bg-zinc-800/50 text-gray-500 cursor-default",
                 (value === '' || value === null) && "text-gray-300 italic"
@@ -171,14 +178,14 @@ export default function ReportDetailPage() {
         });
     };
 
-    const handleCreateInvoice = async (rowIdx: number) => {
+    const handleCreateInvoice = async (rowIdx: number, force: boolean = false) => {
         setCreatingInvoice(prev => ({ ...prev, [rowIdx]: true }));
 
         try {
-            const result = await createInvoiceForReportRow(id, rowIdx);
+            const result = await createInvoiceForReportRow(id, rowIdx, force);
 
             if (result.success) {
-                toast.success(`Фактура ${result.invoiceNumber} створена успішно!`);
+                toast.success(force ? `Фактура ${result.invoiceNumber} оновлена!` : `Фактура ${result.invoiceNumber} створена успішно!`);
                 // Reload report to get updated invoice data
                 await loadReport(id);
             } else {
@@ -623,13 +630,17 @@ export default function ReportDetailPage() {
             }
 
             // Recalculate row total package count
-            let rowPkgTotal = 0;
+            const rowPkgMap: Record<string, number> = {};
             for (let i = 2; i < newDriverPkgRow.length; i++) {
                 const cell = newDriverPkgRow[i];
                 const count = typeof cell === 'object' && cell !== null ? cell.count : (Number(cell) || 0);
-                rowPkgTotal += count;
+                const type = typeof cell === 'object' && cell !== null ? cell.packageType : 'kart';
+
+                if (count > 0) {
+                    rowPkgMap[type] = (rowPkgMap[type] || 0) + count;
+                }
             }
-            newDriverPkgRow[1] = rowPkgTotal;
+            newDriverPkgRow[1] = { breakdown: rowPkgMap };
         }
 
         newDriverPkgRows[rowIdx] = newDriverPkgRow;
@@ -741,8 +752,11 @@ export default function ReportDetailPage() {
                 </div>
             </div>
 
-            <Card className="border-none shadow-sm bg-white dark:bg-zinc-900 overflow-hidden">
-                <CardHeader className="border-b border-zinc-100 dark:border-zinc-800 py-4">
+            {/* Summary Cards */}
+            {/* Summary Cards Removed per user request */}
+
+            <Card className="border-none shadow-2xl bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden ring-1 ring-zinc-200 dark:ring-zinc-800">
+                <CardHeader className="border-b border-zinc-100 dark:border-zinc-800 py-5 bg-zinc-50/50 dark:bg-zinc-900/50">
                     <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
                         <FileBarChart2 size={16} />
                         Таблиця агрегації
@@ -750,7 +764,7 @@ export default function ReportDetailPage() {
                 </CardHeader>
                 <CardContent className="p-0 overflow-auto max-h-[calc(100vh-250px)] relative">
                     <table className="w-full text-left border-collapse text-sm table-fixed">
-                        <thead className="bg-zinc-50 dark:bg-zinc-800/80 sticky top-0 z-10 backdrop-blur-sm">
+                        <thead className="bg-zinc-100 dark:bg-zinc-800 sticky top-0 z-30 shadow-sm">
                             <tr>
                                 {reportData.headers.map((header: string, idx: number) => {
                                     const width = getColumnWidth(idx);
@@ -766,9 +780,9 @@ export default function ReportDetailPage() {
                                                 left: left !== undefined ? `${left}px` : undefined
                                             }}
                                             className={cn(
-                                                "px-4 py-3 font-bold text-zinc-600 dark:text-zinc-300 border-b border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap relative group",
-                                                idx < 2 && "sticky z-30 bg-zinc-50 dark:bg-zinc-800",
-                                                header === 'Вага' && "bg-blue-50 dark:bg-blue-900/20"
+                                                "px-4 py-4 text-xs font-bold text-zinc-500 dark:text-zinc-400 border-b border-r border-zinc-200/60 dark:border-zinc-700 whitespace-nowrap relative group uppercase tracking-wider",
+                                                idx < 2 && "sticky z-40 bg-zinc-100 dark:bg-zinc-800 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]",
+                                                header === 'Вага' && "bg-blue-50/80 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
                                             )}
                                             onMouseEnter={(e) => {
                                                 if (meta) {
@@ -828,7 +842,7 @@ export default function ReportDetailPage() {
                                     );
                                 })}
                                 {/* Actions Column */}
-                                <th className="px-4 py-3 font-bold text-center text-zinc-600 dark:text-zinc-300 border-b border-zinc-200 dark:border-zinc-700 whitespace-nowrap bg-zinc-50 dark:bg-zinc-800 sticky right-0 z-30" style={{ width: '60px', minWidth: '60px' }}>
+                                <th className="px-4 py-4 font-bold text-center text-zinc-500 dark:text-zinc-400 border-b border-zinc-200/60 dark:border-zinc-700 whitespace-nowrap bg-zinc-100 dark:bg-zinc-800 sticky right-0 z-40 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)]" style={{ width: '100px', minWidth: '100px' }}>
                                     Дії
                                 </th>
                             </tr>
@@ -839,7 +853,7 @@ export default function ReportDetailPage() {
                                 const invoiceData = invoices[rowIdx];
 
                                 return (
-                                    <tr key={rowIdx} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                                    <tr key={rowIdx} className="hover:bg-blue-50/30 dark:hover:bg-zinc-800/50 transition-colors group/row">
                                         {row.map((cell: any, colIdx: number) => {
                                             const header = reportData.headers[colIdx];
                                             const isEditable = header !== 'Клієнт' && header !== 'Вага';
@@ -856,9 +870,9 @@ export default function ReportDetailPage() {
                                                         left: left !== undefined ? `${left}px` : undefined
                                                     }}
                                                     className={cn(
-                                                        "px-2 py-2 text-zinc-700 dark:text-zinc-300 whitespace-nowrap border-r border-zinc-100 dark:border-zinc-800 overflow-hidden",
-                                                        colIdx < 2 && "sticky z-10 bg-white dark:bg-zinc-900",
-                                                        header === 'Вага' && "font-bold bg-blue-50/50 dark:bg-blue-900/10 px-4"
+                                                        "px-2 py-3.5 text-zinc-700 dark:text-zinc-300 whitespace-nowrap border-b border-r border-zinc-100 dark:border-zinc-800/50 overflow-hidden",
+                                                        colIdx < 2 && "sticky z-20 bg-white dark:bg-zinc-900 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]",
+                                                        header === 'Вага' && "font-medium bg-blue-50/30 dark:bg-blue-900/10 px-4 text-blue-900 dark:text-blue-100"
                                                     )}>
                                                     {isEditable ? (
                                                         <div className="flex flex-col relative group/cell">
@@ -915,7 +929,7 @@ export default function ReportDetailPage() {
                                                             })()}
                                                         </div>
                                                     ) : (
-                                                        <div className="p-2 truncate flex flex-col" title={String(cell)}>
+                                                        <div className="p-2 truncate flex flex-col tabular-nums" title={String(cell)}>
                                                             <span className={cn(header === 'Вага' && "font-bold")}>
                                                                 {formatCell(cell, colIdx)}
                                                             </span>
@@ -926,35 +940,38 @@ export default function ReportDetailPage() {
                                             );
                                         })}
                                         {/* Actions Column */}
-                                        <td className="px-2 py-2 text-center border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky right-0 z-10" style={{ width: '60px', minWidth: '60px' }}>
-                                            {invoiceData ? (
+                                        {/* Actions Column */}
+                                        <td className="px-2 py-3.5 text-center border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky right-0 z-20 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)]" style={{ width: '100px', minWidth: '100px' }}>
+                                            <div className="flex items-center justify-center gap-1">
+                                                {invoiceData && (
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        className="w-8 h-8 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                                        asChild
+                                                        title={`Фактура: ${invoiceData.invoiceNumber}`}
+                                                    >
+                                                        <a href={invoiceData.invoiceUrl} target="_blank" rel="noopener noreferrer">
+                                                            <FileCheck size={16} />
+                                                        </a>
+                                                    </Button>
+                                                )}
+
                                                 <Button
                                                     size="icon"
                                                     variant="ghost"
-                                                    className="w-8 h-8 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
-                                                    asChild
-                                                    title={`Фактура: ${invoiceData.invoiceNumber}`}
-                                                >
-                                                    <a href={invoiceData.invoiceUrl} target="_blank" rel="noopener noreferrer">
-                                                        <FileCheck size={16} />
-                                                    </a>
-                                                </Button>
-                                            ) : (
-                                                <Button
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    className="w-8 h-8 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-                                                    onClick={() => handleCreateInvoice(rowIdx)}
+                                                    className={cn("w-8 h-8", invoiceData ? "text-zinc-400 hover:text-blue-600 hover:bg-zinc-50" : "text-zinc-500 hover:text-zinc-900")}
+                                                    onClick={() => handleCreateInvoice(rowIdx, !!invoiceData)}
                                                     disabled={creatingInvoice[rowIdx]}
-                                                    title="Виставити фактуру"
+                                                    title={invoiceData ? "Переробити фактуру" : "Виставити фактуру"}
                                                 >
                                                     {creatingInvoice[rowIdx] ? (
                                                         <Loader2 size={16} className="animate-spin" />
                                                     ) : (
-                                                        <FileText size={16} />
+                                                        invoiceData ? <RotateCcw size={16} /> : <FileText size={16} />
                                                     )}
                                                 </Button>
-                                            )}
+                                            </div>
                                         </td>
                                     </tr>
                                 )
@@ -977,12 +994,15 @@ export default function ReportDetailPage() {
                                                 left: left !== undefined ? `${left}px` : undefined
                                             }}
                                             className={cn(
-                                                "px-4 py-3 text-zinc-900 dark:text-zinc-100 whitespace-nowrap border-r border-zinc-200 dark:border-zinc-700 overflow-hidden",
-                                                idx < 2 && "sticky z-20 bg-zinc-100 dark:bg-zinc-800",
-                                                idx === 1 && "shadow-[4px_0_8px_-2px_rgba(0,0,0,0.1)] clip-right",
+                                                "px-4 py-4 text-zinc-900 dark:text-zinc-100 whitespace-nowrap border-r border-zinc-200/50 dark:border-zinc-700 overflow-hidden font-bold bg-zinc-50/50 dark:bg-zinc-800/50",
+                                                idx < 2 && "sticky z-20 bg-zinc-50 dark:bg-zinc-800 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]",
+                                                idx === 1 && "text-blue-700 dark:text-blue-300",
                                             )}>
-                                            <div className="flex flex-col">
-                                                {(Number(cell) !== 0 || idx === 0) && (
+                                            <div className="flex flex-col tabular-nums">
+                                                {/* If index 0, show "TOTAL (вага)" instead of standard client text */}
+                                                {idx === 0 ? (
+                                                    <span className="font-bold text-zinc-600 dark:text-zinc-400">TOTAL (вага)</span>
+                                                ) : (Number(cell) !== 0 && (
                                                     <div className="flex items-baseline gap-1">
                                                         <span>{formatCell(cell, idx)}</span>
                                                         {(() => {
@@ -992,12 +1012,12 @@ export default function ReportDetailPage() {
                                                             );
                                                         })()}
                                                     </div>
-                                                )}
+                                                ))}
                                             </div>
                                         </td>
                                     );
                                 })}
-                                <td className="px-4 py-3 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 sticky right-0 z-20" style={{ width: '60px', minWidth: '60px' }}></td>
+                                <td className="px-4 py-3 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 sticky right-0 z-20" style={{ width: '100px', minWidth: '100px' }}></td>
                             </tr>
 
                             {/* Row 2: Package Counts */}
@@ -1008,7 +1028,7 @@ export default function ReportDetailPage() {
 
                                     let content = null;
                                     if (idx === 0) {
-                                        content = "Пакування";
+                                        content = <span className="font-bold text-zinc-600 dark:text-zinc-400">TOTAL (пак.)</span>;
                                     } else if (idx !== 1) {
                                         const pkgData = reportData.packageCountFooter?.[idx];
                                         const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
@@ -1016,7 +1036,7 @@ export default function ReportDetailPage() {
 
                                         if (count > 0) {
                                             content = (
-                                                <div className="flex items-baseline gap-1">
+                                                <div className="flex items-baseline gap-1 tabular-nums">
                                                     <span>{Number(count).toFixed(1)}</span>
                                                     <span className="text-[10px] text-zinc-500 font-normal select-none">{type}</span>
                                                 </div>
@@ -1041,15 +1061,28 @@ export default function ReportDetailPage() {
                                         </td>
                                     );
                                 })}
-                                <td className="px-4 py-3 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 sticky right-0 z-20" style={{ width: '60px', minWidth: '60px' }}></td>
+                                <td className="px-4 py-3 border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 sticky right-0 z-20" style={{ width: '100px', minWidth: '100px' }}></td>
                             </tr>
                         </tbody>
 
                         {/* Driver Rows Section - Appended to Main Table */}
                         {driverRows.length > 0 && (
                             <tbody className="border-t-4 border-double border-blue-200 dark:border-blue-800">
+                                {/* Logistics Header */}
+                                <tr className="bg-slate-800 dark:bg-slate-900 shadow-md relative z-20">
+                                    <td
+                                        colSpan={reportData.headers.length + 1}
+                                        className="px-4 py-3 text-sm font-bold text-white uppercase tracking-wider sticky left-0 top-[45px] z-20 shadow-md"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <Truck size={16} className="text-blue-400" />
+                                            <span className="text-blue-100">Логістика / Водії</span>
+                                        </div>
+                                    </td>
+                                </tr>
+
                                 {driverRows.map((row: any[], rowIdx: number) => (
-                                    <tr key={`driver-${rowIdx}`} className="hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors bg-blue-50/10 dark:bg-blue-900/5">
+                                    <tr key={`driver-${rowIdx}`} className="hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors bg-white dark:bg-zinc-900 border-b border-blue-100/50 dark:border-blue-900/20 group/driver">
                                         {row.map((cell: any, colIdx: number) => {
                                             const header = reportData.headers[colIdx];
                                             const width = getColumnWidth(colIdx);
@@ -1066,9 +1099,9 @@ export default function ReportDetailPage() {
                                                         left: left !== undefined ? `${left}px` : undefined
                                                     }}
                                                     className={cn(
-                                                        "px-2 py-2 text-zinc-700 dark:text-zinc-300 whitespace-nowrap border-r border-blue-100 dark:border-blue-800 overflow-hidden",
-                                                        colIdx < 2 && "sticky z-10 bg-blue-50/10 dark:bg-zinc-900",
-                                                        header === 'Вага' && "font-bold bg-blue-50/30 dark:bg-blue-900/10 px-4"
+                                                        "px-2 py-3.5 text-zinc-600 dark:text-zinc-400 whitespace-nowrap border-r border-blue-50 dark:border-blue-900/20 overflow-hidden",
+                                                        colIdx < 2 && "sticky z-10 bg-white dark:bg-zinc-900 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]",
+                                                        header === 'Вага' && "font-medium bg-blue-50/30 dark:bg-blue-900/10 px-4 text-blue-800 dark:text-blue-200"
                                                     )}>
                                                     <div className="flex flex-col relative group/cell">
                                                         <div className="flex items-center">
@@ -1081,6 +1114,20 @@ export default function ReportDetailPage() {
                                                         </div>
                                                         {(() => {
                                                             const pkgData = driverPackageCountRows?.[rowIdx]?.[colIdx];
+
+                                                            // Handle Breakdown for Total Column
+                                                            if (colIdx === 1 && typeof pkgData === 'object' && pkgData?.breakdown) {
+                                                                return (
+                                                                    <div className="flex flex-col gap-0.5 mt-1">
+                                                                        {Object.entries(pkgData.breakdown).map(([type, count]) => (
+                                                                            <div key={type} className="px-2 text-[10px] text-zinc-500 font-medium bg-zinc-100 dark:bg-zinc-800 rounded w-fit">
+                                                                                {Number(count).toFixed(1)} {type}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                );
+                                                            }
+
                                                             const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
                                                             const type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
 
@@ -1094,7 +1141,7 @@ export default function ReportDetailPage() {
                                                 </td>
                                             );
                                         })}
-                                        <td className="px-2 py-2 text-center border-l border-blue-100 dark:border-blue-800 bg-white dark:bg-zinc-900 sticky right-0 z-10" style={{ width: '60px', minWidth: '60px' }}>
+                                        <td className="px-2 py-3 text-center border-l border-blue-100 dark:border-blue-800 bg-white dark:bg-zinc-900 sticky right-0 z-10" style={{ width: '100px', minWidth: '100px' }}>
                                             <Button
                                                 variant="ghost"
                                                 size="icon"

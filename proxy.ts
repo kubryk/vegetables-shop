@@ -20,12 +20,8 @@ export default function proxy(req: NextRequest) {
         }
     }
 
+    // Rewrite to the auth API route to handle the 401 response
+    // Middleware/Proxy in Next.js 16 cannot return a response body directly
     url.pathname = '/api/auth';
-
-    return new NextResponse('Auth Required', {
-        status: 401,
-        headers: {
-            'WWW-Authenticate': 'Basic realm="Secure Dashboard"',
-        },
-    });
+    return NextResponse.rewrite(url);
 }

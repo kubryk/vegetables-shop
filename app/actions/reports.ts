@@ -111,7 +111,7 @@ export async function duplicateReport(id: string) {
     }
 }
 
-export async function createInvoiceForReportRow(reportId: string, rowIndex: number) {
+export async function createInvoiceForReportRow(reportId: string, rowIndex: number, force: boolean = false) {
     try {
         // Get report
         const reportResult = await getReport(reportId);
@@ -132,7 +132,9 @@ export async function createInvoiceForReportRow(reportId: string, rowIndex: numb
 
         // Check if invoice already exists for this row
         const existingInvoices = (report.invoices as any) || {};
-        if (existingInvoices[rowIndex]) {
+        const existingInvoice = existingInvoices[rowIndex];
+
+        if (existingInvoices[rowIndex] && !force) {
             return {
                 success: false,
                 error: 'Invoice already exists for this order',
@@ -141,7 +143,7 @@ export async function createInvoiceForReportRow(reportId: string, rowIndex: numb
         }
 
         // Prepare invoice positions from the edited row data
-        const { createInvoice } = await import('@/lib/fakturownia-invoices');
+        const { createInvoice, updateInvoice } = await import('@/lib/fakturownia-invoices');
         const positions = [];
 
         // Start from index 2 (skip Client and Weight columns)
@@ -206,14 +208,28 @@ export async function createInvoiceForReportRow(reportId: string, rowIndex: numb
         }
 
         // Create invoice
-        const invoiceResult = await createInvoice({
-            client_id: orderMeta.fakturowniaClientId,
-            buyer_name: orderMeta.customerName,
-            buyer_email: orderMeta.customerEmail,
-            positions: positions,
-            currency: orderMeta.currency || 'EUR',
-            sell_date: new Date(orderMeta.orderDate).toISOString().split('T')[0]
-        });
+
+
+        let invoiceResult;
+
+        if (existingInvoice && force) {
+            // Update existing invoice
+            invoiceResult = await updateInvoice(existingInvoice.invoiceId, {
+                client_id: orderMeta.fakturowniaClientId, // Usually ignored by update unless explicit, but good for safety
+                positions: positions,
+                // other fields usually not needed for simple update/remake unless changed
+            });
+        } else {
+            // Create new invoice
+            invoiceResult = await createInvoice({
+                client_id: orderMeta.fakturowniaClientId,
+                buyer_name: orderMeta.customerName,
+                buyer_email: orderMeta.customerEmail,
+                positions: positions,
+                currency: orderMeta.currency || 'EUR',
+                sell_date: new Date(orderMeta.orderDate).toISOString().split('T')[0]
+            });
+        }
 
         if (!invoiceResult.success) {
             return { success: false, error: invoiceResult.error };

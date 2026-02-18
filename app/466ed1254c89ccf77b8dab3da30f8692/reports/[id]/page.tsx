@@ -957,20 +957,22 @@ export default function ReportDetailPage() {
                                                     </Button>
                                                 )}
 
-                                                <Button
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    className={cn("w-8 h-8", invoiceData ? "text-zinc-400 hover:text-blue-600 hover:bg-zinc-50" : "text-zinc-500 hover:text-zinc-900")}
-                                                    onClick={() => handleCreateInvoice(rowIdx, !!invoiceData)}
-                                                    disabled={creatingInvoice[rowIdx]}
-                                                    title={invoiceData ? "Переробити фактуру" : "Виставити фактуру"}
-                                                >
-                                                    {creatingInvoice[rowIdx] ? (
-                                                        <Loader2 size={16} className="animate-spin" />
-                                                    ) : (
-                                                        invoiceData ? <RotateCcw size={16} /> : <FileText size={16} />
-                                                    )}
-                                                </Button>
+                                                {!invoiceData && (
+                                                    <Button
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        className="w-8 h-8 text-zinc-500 hover:text-zinc-900"
+                                                        onClick={() => handleCreateInvoice(rowIdx, false)}
+                                                        disabled={creatingInvoice[rowIdx]}
+                                                        title="Виставити фактуру"
+                                                    >
+                                                        {creatingInvoice[rowIdx] ? (
+                                                            <Loader2 size={16} className="animate-spin" />
+                                                        ) : (
+                                                            <FileText size={16} />
+                                                        )}
+                                                    </Button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

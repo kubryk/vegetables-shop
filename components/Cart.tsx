@@ -43,7 +43,7 @@ const Cart = () => {
 
   const [formData, setFormData] = useState({
     customerName: '',
-    customerEmail: 'admin@gmail.com',
+    customerEmail: '',
   });
 
 
@@ -94,7 +94,7 @@ const Cart = () => {
     setTimeout(() => {
       setSubmitSuccess(false);
       setLastOrder(null);
-      setFormData({ customerName: '', customerEmail: 'admin@gmail.com' });
+      setFormData({ customerName: '', customerEmail: '' });
     }, 300);
   };
 

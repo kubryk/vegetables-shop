@@ -29,6 +29,11 @@ export default function ReportsPage() {
     const [isDeleting, setIsDeleting] = useState<string | null>(null);
     const router = useRouter();
 
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const limit = 10;
+
     // New Report State
     const [open, setOpen] = useState(false);
     const [startDate, setStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0]);
@@ -36,14 +41,15 @@ export default function ReportsPage() {
     const [reportName, setReportName] = useState('');
 
     useEffect(() => {
-        loadReports();
-    }, []);
+        loadReports(currentPage);
+    }, [currentPage]);
 
-    async function loadReports() {
+    async function loadReports(page: number) {
         setIsLoading(true);
-        const res = await getReports();
+        const res = await getReports(page, limit);
         if (res.success && res.data) {
             setReports(res.data);
+            setTotalPages(res.totalPages || 1);
         } else {
             toast.error('Failed to load reports');
         }
@@ -77,7 +83,7 @@ export default function ReportsPage() {
         const res = await deleteReport(id);
         if (res.success) {
             toast.success('Report deleted');
-            loadReports();
+            loadReports(currentPage);
         } else {
             toast.error('Failed to delete report');
         }
@@ -209,6 +215,31 @@ export default function ReportsPage() {
                         </div>
                     )}
                 </CardContent>
+                {totalPages > 1 && (
+                    <div className="flex items-center justify-center p-4 border-t border-zinc-100 dark:border-zinc-800">
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                disabled={currentPage === 1 || isLoading}
+                            >
+                                Попередня
+                            </Button>
+                            <span className="text-sm text-zinc-500">
+                                Сторінка {currentPage} з {totalPages}
+                            </span>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                disabled={currentPage === totalPages || isLoading}
+                            >
+                                Наступна
+                            </Button>
+                        </div>
+                    </div>
+                )}
             </Card>
         </div>
     );

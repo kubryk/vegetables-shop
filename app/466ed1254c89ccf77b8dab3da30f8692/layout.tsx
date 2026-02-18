@@ -60,10 +60,11 @@ export default function DashboardLayout({
                                 <Link
                                     href="/"
                                     target="_blank"
-                                    className="p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+                                    className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-zinc-500 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors border border-transparent hover:border-primary/20"
                                     title="Перейти в магазин"
                                 >
-                                    <Store size={20} />
+                                    <Store size={18} />
+                                    <span>Магазин</span>
                                 </Link>
                                 <ThemeToggle />
                             </div>

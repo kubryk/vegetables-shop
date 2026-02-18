@@ -2,14 +2,31 @@
 
 import { db } from '@/lib/db';
 import { reports } from '@/lib/db/schema';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, count } from 'drizzle-orm';
 import { getAggregationData } from './products';
 import { revalidatePath } from 'next/cache';
 
-export async function getReports() {
+export async function getReports(page: number = 1, limit: number = 20) {
     try {
-        const allReports = await db.select().from(reports).orderBy(desc(reports.createdAt));
-        return { success: true, data: allReports };
+        const offset = (page - 1) * limit;
+
+        const data = await db.select()
+            .from(reports)
+            .orderBy(desc(reports.createdAt))
+            .limit(limit)
+            .offset(offset);
+
+        const [countResult] = await db.select({ count: count() }).from(reports);
+        const totalCount = countResult?.count || 0;
+        const totalPages = Math.ceil(totalCount / limit);
+
+        return {
+            success: true,
+            data,
+            totalCount,
+            totalPages,
+            currentPage: page
+        };
     } catch (error) {
         console.error('Failed to fetch reports:', error);
         return { success: false, error: 'Failed to fetch reports' };

@@ -686,6 +686,17 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
     }
 }
 
+function extractPackageType(text: string | undefined): string | null {
+    if (!text) return null;
+    const lower = text.toLowerCase();
+    // Ukrainian/English keywords for packaging
+    if (lower.includes('wor') || lower.includes('сак') || lower.includes('міш') || lower.includes('mesh')) return 'wor';
+    if (lower.includes('pal') || lower.includes('пал')) return 'pal';
+    if (lower.includes('box') || lower.includes('ящ') || lower.includes('box')) return 'box';
+    if (lower.includes('kart') || lower.includes('кор')) return 'kart';
+    return null;
+}
+
 export async function updateProductMetadata(id: string, data: { image?: string; agregationResult?: string; position?: number }) {
     await verifyAuth();
     try {
@@ -768,6 +779,7 @@ export async function getAggregationData(startDate: string, endDate: string) {
                     productLookup.set(complexKey, {
                         id: productId,
                         name: key,
+                        unit: item.unit,
                         agregationResult: 'weight', // Force weight
                         netWeight: Number(item.netWeight) || 0,
                         unitPerCardboard: Number(item.unitPerCardboard) || 0,
@@ -776,6 +788,22 @@ export async function getAggregationData(startDate: string, endDate: string) {
                     });
 
                     headerKeys.add(complexKey);
+                }
+            });
+        });
+
+        // Track global package types used in this report for zero-quantity items
+        const globalProductPackageTypes = new Map<string, string>();
+        filteredOrders.forEach(order => {
+            const items = Array.isArray(order.items) ? (order.items as any[]) : [];
+            items.forEach(item => {
+                if (item.productId && item.packageType) {
+                    const pid = String(item.productId);
+                    // Prioritize specific types over generic 'kart'
+                    const current = globalProductPackageTypes.get(pid);
+                    if (!current || (current === 'kart' && item.packageType !== 'kart')) {
+                        globalProductPackageTypes.set(pid, item.packageType);
+                    }
                 }
             });
         });
@@ -1022,7 +1050,35 @@ export async function getAggregationData(startDate: string, endDate: string) {
                 const val = orderWeights.get(key);
                 row.push(val !== undefined ? val : 0);
                 const pkg = orderPackageCounts.get(key);
-                pkgRow.push(pkg ? pkg : { count: 0, packageType: 'kart' });
+
+                // Better default package type for empty entries
+                const p = productLookup.get(key);
+                let defaultType = 'kart';
+
+                if (p) {
+                    const pid = String(p.id);
+                    // 1. Try global seen types in this report
+                    const seenType = globalProductPackageTypes.get(pid);
+
+                    if (seenType) {
+                        defaultType = seenType;
+                    } else {
+                        // 2. Try heuristic from name/info
+                        const heuristicType = extractPackageType(p.name + " " + (p.additionalInfo || ""));
+                        if (heuristicType) {
+                            defaultType = heuristicType;
+                        } else {
+                            // 3. Fallback to unit if not weight
+                            const rawUnit = String(p.unit || '').trim().toLowerCase();
+                            const isWeight = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
+                            if (!isWeight && p.unit && p.unit.toLowerCase() !== 'шт' && p.unit.toLowerCase() !== 'szt') {
+                                defaultType = p.unit;
+                            }
+                        }
+                    }
+                }
+
+                pkgRow.push(pkg ? pkg : { count: 0, packageType: defaultType });
             }
 
             dataRows.push(row);

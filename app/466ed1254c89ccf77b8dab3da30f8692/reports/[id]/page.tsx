@@ -26,18 +26,35 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
+const DRIVER_COLORS = [
+    { bg: 'bg-blue-50 dark:bg-blue-950', border: 'border-blue-400', text: 'text-blue-900 dark:text-blue-100' },
+    { bg: 'bg-emerald-50 dark:bg-emerald-950', border: 'border-emerald-400', text: 'text-emerald-900 dark:text-emerald-100' },
+    { bg: 'bg-orange-50 dark:bg-orange-950', border: 'border-orange-400', text: 'text-orange-900 dark:text-orange-100' },
+    { bg: 'bg-purple-50 dark:bg-purple-950', border: 'border-purple-400', text: 'text-purple-900 dark:text-purple-100' },
+    { bg: 'bg-rose-50 dark:bg-rose-950', border: 'border-rose-400', text: 'text-rose-900 dark:text-rose-100' },
+    { bg: 'bg-amber-50 dark:bg-amber-950', border: 'border-amber-400', text: 'text-amber-900 dark:text-amber-100' },
+    { bg: 'bg-cyan-50 dark:bg-cyan-950', border: 'border-cyan-400', text: 'text-cyan-900 dark:text-cyan-100' },
+    { bg: 'bg-indigo-50 dark:bg-indigo-950', border: 'border-indigo-400', text: 'text-indigo-900 dark:text-indigo-100' },
+];
+
+function getDriverColor(index: number | undefined) {
+    if (index === undefined || index < 0) return null;
+    return DRIVER_COLORS[index % DRIVER_COLORS.length];
+}
+
+function extractPackageType(text: string | undefined): string | null {
+    if (!text) return null;
+    const lower = text.toLowerCase();
+    // Ukrainian/English keywords for packaging
+    if (lower.includes('wor') || lower.includes('сак') || lower.includes('міш') || lower.includes('mesh')) return 'wor';
+    if (lower.includes('pal') || lower.includes('пал')) return 'pal';
+    if (lower.includes('box') || lower.includes('ящ') || lower.includes('box')) return 'box';
+    if (lower.includes('kart') || lower.includes('кор')) return 'kart';
+    return null;
+}
+
 // Simple Editable Cell Component (Reused logic)
-function EditableCell({
-    value,
-    onUpdate,
-    unit,
-    readOnly
-}: {
-    value: string | number | React.ReactNode,
-    onUpdate: (newValue: string) => Promise<boolean>,
-    unit?: string,
-    readOnly?: boolean
-}) {
+const EditableCell = ({ value, onUpdate, unit, readOnly = false, className }: { value: any, onUpdate: (val: string) => Promise<boolean>, unit?: string, readOnly?: boolean, className?: string }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [localValue, setLocalValue] = useState<string | number>('');
     const [isSaving, setIsSaving] = useState(false);
@@ -99,8 +116,9 @@ function EditableCell({
             className={cn(
                 "p-2 min-h-[30px] rounded transition-colors truncate tabular-nums",
                 !readOnly && "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800",
-                readOnly && "bg-gray-50/50 dark:bg-zinc-800/50 text-gray-500 cursor-default",
-                (value === '' || value === null) && "text-gray-300 italic"
+                readOnly && "bg-gray-50/50 dark:bg-zinc-800/50 cursor-default",
+                (value === '' || value === null) && "text-gray-300 italic",
+                className
             )}
             title={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
         >
@@ -260,19 +278,26 @@ export default function ReportDetailPage() {
             const pkgType = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
 
             let qtyVal = '';
-            let qtyUnit = '';
+            let qtyUnit = 'kg';
+
+            // Derive package type more robustly (copying logic from cell renderer)
+            let derivedPkgType = pkgType;
+            if (!derivedPkgType || derivedPkgType === 'kart') {
+                derivedPkgType = extractPackageType(meta?.name + " " + (meta?.additionalInfo || "")) || derivedPkgType;
+            }
+            if (!derivedPkgType || derivedPkgType === 'kart') {
+                const u = unit.toLowerCase();
+                derivedPkgType = (u !== 'шт' && u !== 'szt') ? unit || 'kart' : 'kart';
+            }
+
             if (isWeight) {
-                qtyVal = qty.toFixed(2);
-                qtyUnit = unit;
+                qtyVal = ['g', 'г'].includes(rawUnit) ? (qty / 1000).toFixed(0) : qty.toFixed(0);
+                qtyUnit = 'kg';
             } else {
-                // Non-weight items: Use packages as primary quantity if available
-                if (pkgCount > 0) {
-                    qtyVal = pkgCount.toFixed(1);
-                    qtyUnit = pkgType;
-                } else {
-                    qtyVal = qty.toFixed(2);
-                    qtyUnit = unit;
-                }
+                // Non-weight items: Show package count
+                qtyVal = pkgCount > 0 ? pkgCount.toFixed(1) : qty.toFixed(0);
+                // Use the derived package type even if pkgCount is 0, instead of falling back to raw unit
+                qtyUnit = pkgCount > 0 ? derivedPkgType : derivedPkgType;
             }
 
             const cleanHeader = header.split(' [ID:')[0];
@@ -286,7 +311,7 @@ export default function ReportDetailPage() {
         const totalWeightData = row[1];
         const totalWeight = typeof totalWeightData === 'object' && totalWeightData !== null ? (totalWeightData.weight || 0) : (Number(totalWeightData) || 0);
 
-        lines.push(`TOTAL\t${totalWeight.toFixed(2)}\tkg`);
+        lines.push(`TOTAL\t${totalWeight.toFixed(0)}\tkg`);
 
         return lines.join('\n');
     }
@@ -356,8 +381,38 @@ export default function ReportDetailPage() {
         const isNumberCol = headerIdx > 0;
 
         // 1. Update Cell Value
+        // 1. Update Cell Value with Inverse Conversion Logic
         const val = isNumberCol ? (Number(newValue) || 0) : newValue;
-        newRow[headerIdx] = val;
+        let storageVal = val;
+
+        if (isNumberCol && headerIdx >= 2) {
+            const meta = newData.headerMetadata?.[headerIdx];
+            if (meta) {
+                const rawUnit = String(meta.unit || '').trim().toLowerCase();
+                const isWeight = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
+
+                if (isWeight) {
+                    // If original was g/г, we displayed kg (val). Convert back to g.
+                    if (['g', 'г'].includes(rawUnit)) {
+                        storageVal = Number(val) * 1000;
+                    }
+                } else {
+                    // Non-weight items: We displayed 'packages' if available.
+                    // Convert 'packages' (val) back to 'quantity' (storageVal).
+                    const currentVal = Number(report.data.rows[rowIdx][headerIdx]) || 0;
+                    const currentPkgData = report.data.packageCountRows?.[rowIdx]?.[headerIdx];
+                    const currentPkgCount = typeof currentPkgData === 'object' && currentPkgData !== null ? currentPkgData.count : (Number(currentPkgData) || 0);
+
+                    if (currentVal > 0 && currentPkgCount > 0) {
+                        storageVal = Number(val) * (currentVal / currentPkgCount);
+                    } else if (meta.unitPerCardboard > 0) {
+                        storageVal = Number(val) * meta.unitPerCardboard;
+                    }
+                }
+            }
+        }
+
+        newRow[headerIdx] = storageVal;
         newRows[rowIdx] = newRow;
 
         // 2. Recalculate Package Count for the Modified Cell (moved up)
@@ -367,7 +422,7 @@ export default function ReportDetailPage() {
             const meta = newData.headerMetadata?.[headerIdx];
 
             if (meta) {
-                const weightOrQty = Number(val) || 0;
+                const weightOrQty = Number(storageVal) || 0;
                 let newPkgCount = 0;
 
                 // Try to infer ratio from previous value to preserve custom packaging logic
@@ -419,8 +474,16 @@ export default function ReportDetailPage() {
                                     }
                                 } else {
                                     if (meta.unitPerCardboard > 0 && pkgCountFromMeta > 0) {
-                                        const ratio = pkgCountFromMeta / meta.unitPerCardboard;
-                                        newPkgCount = weightOrQty * ratio;
+                                        // Standard: qty / capacity = packages
+                                        newPkgCount = weightOrQty / meta.unitPerCardboard;
+                                        foundFromOriginal = true;
+                                    } else if (pkgCountFromMeta > 0) {
+                                        // Fallback: if no capacity, assume the meta number might be capacity
+                                        // E.g. "3 box" -> capacity 3? No, usually "3 box" means 3 boxes for the netWeight.
+                                        // But for PIECES, "3 box" is ambiguous.
+                                        // Safer to default to 1:1 or use input if we can't determine ratio.
+                                        // Avoid multiplying by pkgCountFromMeta blindly.
+                                        newPkgCount = weightOrQty;
                                         foundFromOriginal = true;
                                     }
                                 }
@@ -693,6 +756,8 @@ export default function ReportDetailPage() {
                         totalWeight += qty;
                     } else if (['g', 'г'].includes(unit)) {
                         totalWeight += qty / 1000;
+                    } else if (meta.netWeight > 0) {
+                        totalWeight += qty * meta.netWeight;
                     } else {
                         // Treat non-weight unit packages as 1kg each
                         if (pkgCount > 0) {
@@ -826,74 +891,104 @@ export default function ReportDetailPage() {
 
         const isNumberCol = headerIdx > 0;
         const val = isNumberCol ? (Number(newValue) || 0) : newValue;
-        newDriverRow[headerIdx] = val;
 
-        // Recalculate weight total if editing product column
+        // --- INVERSE CONVERSION LOGIC FOR DRIVERS ---
+        let storageVal = val;
         if (isNumberCol && headerIdx >= 2) {
-            let rowTotal = 0;
-            for (let i = 2; i < newDriverRow.length; i++) {
-                const colHeader = report.data.headers[i];
-                const qty = Number(newDriverRow[i]) || 0;
-                const meta = report.data.headerMetadata?.[i];
+            const meta = report.data.headerMetadata?.[headerIdx];
+            if (meta) {
+                const rawUnit = String(meta.unit || '').trim().toLowerCase();
+                // If original was g/г, we displayed kg (val). Convert back to g.
+                if (['g', 'г'].includes(rawUnit)) {
+                    storageVal = Number(val) * 1000;
+                } else {
+                    // Invert package count for drivers too
+                    const currentVal = Number(driverRows[rowIdx][headerIdx]) || 0;
+                    const currentPkgData = driverPackageCountRows?.[rowIdx]?.[headerIdx];
+                    const currentPkgCount = typeof currentPkgData === 'object' && currentPkgData !== null ? currentPkgData.count : (Number(currentPkgData) || 0);
 
-                if (meta) {
-                    const unit = meta.unit?.toLowerCase();
-                    if (['kg', 'кг'].includes(unit)) {
-                        rowTotal += qty;
-                    } else if (['g', 'г'].includes(unit)) {
-                        rowTotal += qty / 1000;
-                    } else {
-                        const netWeight = meta.netWeight || 0;
-                        rowTotal += qty * netWeight;
+                    if (currentVal > 0 && currentPkgCount > 0) {
+                        storageVal = Number(val) * (currentVal / currentPkgCount);
+                    } else if (meta.unitPerCardboard > 0) {
+                        storageVal = Number(val) * meta.unitPerCardboard;
                     }
                 }
             }
-            newDriverRow[1] = rowTotal;
         }
 
-        newDriverRows[rowIdx] = newDriverRow;
+        newDriverRow[headerIdx] = storageVal;
 
-        // Recalculate package counts for this driver row
+        // Recalculate package counts for this driver row first, so we have them for weight total
         const newDriverPkgRows = [...driverPackageCountRows];
         const newDriverPkgRow = [...newDriverPkgRows[rowIdx]];
 
         if (headerIdx >= 2) {
             const meta = report.data.headerMetadata?.[headerIdx];
             if (meta) {
-                const weightOrQty = Number(val) || 0;
+                // Use the calculated storage value (the real quantity in DB/State) instead of the raw input 'val'
+                // This ensures that whether we edited 'kg' or 'boxes', we derive the package count from the standardized quantity.
+                const weightOrQty = Number(newDriverRow[headerIdx]) || 0;
                 let newPkgCount = 0;
 
-                // Try to parse from meta.additionalInfo (e.g., "3 ggg" means 3 packages)
-                let packageType = 'kart';
-                if (meta.additionalInfo) {
-                    const match = meta.additionalInfo.match(/^(\d+(?:\.\d+)?)\s+(.+)/);
-                    if (match) {
-                        const pkgCountFromMeta = parseFloat(match[1]);
-                        packageType = match[2].trim();
+                // Try to infer ratio from previous value to preserve custom packaging logic
+                const oldVal = Number(driverRows[rowIdx][headerIdx]) || 0;
+                const oldPkgData = driverPackageCountRows?.[rowIdx]?.[headerIdx];
+                const oldPkgCount = typeof oldPkgData === 'object' && oldPkgData !== null ? oldPkgData.count : (Number(oldPkgData) || 0);
 
-                        if (pkgCountFromMeta > 0) {
-                            if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
-                                if (meta.netWeight > 0) {
-                                    const ratio = pkgCountFromMeta / meta.netWeight;
-                                    newPkgCount = weightOrQty * ratio;
-                                }
-                            } else {
-                                if (meta.unitPerCardboard > 0) {
-                                    const ratio = pkgCountFromMeta / meta.unitPerCardboard;
-                                    newPkgCount = weightOrQty * ratio;
-                                }
+                if (oldVal > 0 && oldPkgCount > 0) {
+                    const ratio = oldPkgCount / oldVal;
+                    newPkgCount = weightOrQty * ratio;
+                } else {
+                    // Try to parse from meta.additionalInfo (e.g., "3 ggg" means 3 packages)
+                    let pkgCountFromMeta = 0;
+                    if (meta.additionalInfo) {
+                        const match = meta.additionalInfo.match(/^(\d+(?:\.\d+)?)\s+(.+)/);
+                        if (match) {
+                            pkgCountFromMeta = parseFloat(match[1]);
+                        }
+                    }
+
+                    if (pkgCountFromMeta > 0) {
+                        if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
+                            if (meta.netWeight > 0) {
+                                const ratio = pkgCountFromMeta / meta.netWeight;
+                                newPkgCount = weightOrQty * ratio;
                             }
+                        } else {
+                            // Non-weight items: pieces/bunches etc.
+                            // If additionalInfo says "3 box", and we input 1 piece:
+                            // We should check unitPerCardboard.
+                            // If unitPerCardboard is 0, we can't really guess ratio unless we assume 1:1 or use the number in meta as capacity?
+                            // Actually, if additionalInfo is "3 box", it usually describes the PACKAGING itself or capacity.
+                            // But usually `pkgCountFromMeta` IS the capacity if the string is like "12kg / 3box".
+
+                            if (meta.unitPerCardboard > 0) {
+                                // Standard: qty / capacity = packages
+                                newPkgCount = weightOrQty / meta.unitPerCardboard;
+                            } else {
+                                // Fallback: if no capacity, maybe 1 to 1? Or just use the input?
+                                // Previously it was multiplying, which is wrong if we enter pieces.
+                                // Let's default to 1:1 if no better info.
+                                newPkgCount = weightOrQty;
+                            }
+                        }
+                    }
+
+                    // Fallback calculation
+                    if (newPkgCount === 0) {
+                        if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
+                            if (meta.netWeight > 0) newPkgCount = weightOrQty / meta.netWeight;
+                        } else {
+                            if (meta.unitPerCardboard > 0) newPkgCount = weightOrQty / meta.unitPerCardboard;
                         }
                     }
                 }
 
-                // Fallback calculation
-                if (newPkgCount === 0) {
-                    if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
-                        if (meta.netWeight > 0) newPkgCount = weightOrQty / meta.netWeight;
-                    } else {
-                        if (meta.unitPerCardboard > 0) newPkgCount = weightOrQty / meta.unitPerCardboard;
-                    }
+                // Preserve packageType if present in old data, otherwise default or extract from meta
+                let packageType = (typeof oldPkgData === 'object' && oldPkgData?.packageType) ? oldPkgData.packageType : 'kart';
+                if (meta.additionalInfo) {
+                    const match = meta.additionalInfo.match(/^(\d+(?:\.\d+)?)\s+(.+)/);
+                    if (match) packageType = match[2].trim();
                 }
 
                 newDriverPkgRow[headerIdx] = { count: newPkgCount, packageType };
@@ -913,7 +1008,37 @@ export default function ReportDetailPage() {
             newDriverPkgRow[1] = { breakdown: rowPkgMap };
         }
 
+        // Save the updated package row to the array so the weight loop can use it
         newDriverPkgRows[rowIdx] = newDriverPkgRow;
+
+        // Recalculate weight total if editing product column
+        if (isNumberCol && headerIdx >= 2) {
+            let rowTotal = 0;
+            for (let i = 2; i < newDriverRow.length; i++) {
+                const colHeader = report.data.headers[i];
+                const qty = Number(newDriverRow[i]) || 0;
+                const meta = report.data.headerMetadata?.[i];
+
+                if (meta) {
+                    const unit = meta.unit?.toLowerCase();
+                    const pkgCell = newDriverPkgRow[i];
+                    const pkgCount = typeof pkgCell === 'object' && pkgCell !== null ? pkgCell.count : (Number(pkgCell) || 0);
+
+                    if (['kg', 'кг'].includes(unit)) {
+                        rowTotal += qty;
+                    } else if (['g', 'г'].includes(unit)) {
+                        rowTotal += qty / 1000;
+                    } else if (meta.netWeight > 0) {
+                        rowTotal += qty * meta.netWeight;
+                    } else if (pkgCount > 0) {
+                        rowTotal += pkgCount;
+                    }
+                }
+            }
+            newDriverRow[1] = rowTotal;
+        }
+
+        newDriverRows[rowIdx] = newDriverRow;
 
         // Update state
         setDriverRows(newDriverRows);
@@ -957,9 +1082,9 @@ export default function ReportDetailPage() {
         }
 
         if (typeof value === 'number') {
-            if (colIndex === 1) return `${value.toFixed(2)} kg`;
+            if (colIndex === 1) return `${value.toFixed(0)} kg`;
 
-            return Number.isInteger(value) ? value : value.toFixed(2);
+            return Number.isInteger(value) ? value : value.toFixed(0);
         }
         return value;
     };
@@ -1062,7 +1187,7 @@ export default function ReportDetailPage() {
                                             className={cn(
                                                 "px-4 py-4 text-xs font-bold text-zinc-500 dark:text-zinc-400 border-b border-r border-zinc-200/60 dark:border-zinc-700 whitespace-nowrap relative group uppercase tracking-wider",
                                                 idx < 2 && "sticky z-40 bg-zinc-100 dark:bg-zinc-800 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]",
-                                                header === 'Вага' && "bg-blue-50/80 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                                                (header === 'Вага' || header.toLowerCase().includes('total') || header.toLowerCase().includes('сума')) && "bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-400 text-center"
                                             )}
                                             onMouseEnter={(e) => {
                                                 if (meta) {
@@ -1131,9 +1256,14 @@ export default function ReportDetailPage() {
                             {reportData.rows.map((row: any[], rowIdx: number) => {
                                 const invoices = (report.invoices as any) || {};
                                 const invoiceData = invoices[rowIdx];
+                                const assignedDriverIdx = driverAssignments[rowIdx];
+                                const dColor = getDriverColor(assignedDriverIdx);
 
                                 return (
-                                    <tr key={rowIdx} className="hover:bg-blue-50/30 dark:hover:bg-zinc-800/50 transition-colors group/row">
+                                    <tr key={rowIdx} className={cn(
+                                        "transition-colors group/row border-b border-zinc-100 dark:border-zinc-800",
+                                        dColor ? `${dColor.bg} border-l-[4px] ${dColor.border}` : "hover:bg-blue-50/30 dark:hover:bg-zinc-800/50"
+                                    )}>
                                         {row.map((cell: any, colIdx: number) => {
                                             const header = reportData.headers[colIdx];
                                             const isEditable = header !== 'Клієнт' && header !== 'Вага';
@@ -1150,98 +1280,76 @@ export default function ReportDetailPage() {
                                                         left: left !== undefined ? `${left}px` : undefined
                                                     }}
                                                     className={cn(
-                                                        "px-2 py-3.5 text-zinc-700 dark:text-zinc-300 whitespace-nowrap border-b border-r border-zinc-100 dark:border-zinc-800/50 overflow-hidden",
-                                                        colIdx < 2 && "sticky z-20 bg-white dark:bg-zinc-900 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]",
-                                                        header === 'Вага' && "font-medium bg-blue-50/30 dark:bg-blue-900/10 px-4 text-blue-900 dark:text-blue-100"
+                                                        "px-2 py-3.5 text-zinc-700 dark:text-zinc-300 whitespace-nowrap border-r border-zinc-100 dark:border-zinc-800/50 overflow-hidden",
+                                                        colIdx < 2 && "sticky z-20 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]",
+                                                        colIdx < 2 && (dColor ? dColor.bg : "bg-white dark:bg-zinc-900"),
+                                                        (header === 'Вага' || header.toLowerCase().includes('total') || header.toLowerCase().includes('сума')) && (dColor ? "text-center text-blue-600 dark:text-blue-400" : "font-medium bg-blue-50/30 dark:bg-blue-900/10 px-4 text-blue-600 dark:text-blue-400 text-center"),
+                                                        (header === 'Вага' || header.toLowerCase().includes('total') || header.toLowerCase().includes('сума')) && dColor && "font-bold px-4 text-center text-blue-600 dark:text-blue-400"
                                                     )}>
                                                     {isEditable ? (
                                                         <div className="flex flex-col relative group/cell">
-                                                            <div className="flex items-center">
-                                                                <EditableCell
-                                                                    value={cell}
-                                                                    onUpdate={(newVal) => handleCellUpdate(rowIdx, colIdx, newVal)}
-                                                                    unit={meta?.unit}
-                                                                />
-                                                                {(() => {
-                                                                    const val = Number(cell) || 0;
-                                                                    if (val > 0 && meta) {
-                                                                        const rawUnit = String(meta.unit || '').trim().toLowerCase();
-                                                                        const isService = ['godz', 'h', 'min', 'm', 'usł', 'srv', 'km'].includes(rawUnit);
-                                                                        const isWeight = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
-                                                                        const hasNetWeight = meta.netWeight > 0;
-
-                                                                        // Check package count
-                                                                        const pkgData = reportData.packageCountRows?.[rowIdx]?.[colIdx];
-                                                                        const pkgCount = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
-
-                                                                        // Case 1: Service or Piece without weight AND NO Packages -> Not included
-                                                                        const notIncluded = (isService || (!isWeight && !hasNetWeight)) && pkgCount <= 0;
-
-                                                                        // Case 2: Piece without weight BUT Has Packages -> Included as 1kg/pkg
-                                                                        const calculatedAsPkg = !isService && !isWeight && !hasNetWeight && pkgCount > 0;
-
-                                                                        if (notIncluded) {
-                                                                            return (
-                                                                                <TooltipProvider>
-                                                                                    <Tooltip>
-                                                                                        <TooltipTrigger asChild>
-                                                                                            <div className="absolute top-0 right-0 p-0.5 cursor-help">
-                                                                                                <AlertTriangle size={12} className="text-amber-500" />
-                                                                                            </div>
-                                                                                        </TooltipTrigger>
-                                                                                        <TooltipContent side="top">
-                                                                                            <p className="text-xs">
-                                                                                                Увага: Цей товар не враховується в загальну вагу замовлення,<br />
-                                                                                                оскільки вага не вказана у Fakturownia, а пакування = 0.
-                                                                                            </p>
-                                                                                        </TooltipContent>
-                                                                                    </Tooltip>
-                                                                                </TooltipProvider>
-                                                                            );
-                                                                        }
-
-                                                                        // calculatedAsPkg case is now handled by the badge below, so no icon needed here.
-                                                                    }
-                                                                    return null;
-                                                                })()}
-                                                            </div>
                                                             {(() => {
+                                                                const qty = Number(cell) || 0;
+                                                                let displayValue: any = cell;
+
                                                                 const pkgData = reportData.packageCountRows?.[rowIdx]?.[colIdx];
-                                                                const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
-                                                                const type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
+                                                                const pkgCount = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
 
-                                                                if (count > 0) {
-                                                                    const rawUnit = String(meta?.unit || '').trim().toLowerCase();
-                                                                    const isKg = ['kg', 'кг'].includes(rawUnit);
-                                                                    const isG = ['g', 'г'].includes(rawUnit);
-                                                                    const isWeight = isKg || isG;
+                                                                let displayUnit = 'kg';
 
-                                                                    let weightInKg = 0;
-                                                                    if (isKg) {
-                                                                        weightInKg = Number(cell) || 0;
-                                                                    } else if (isG) {
-                                                                        weightInKg = (Number(cell) || 0) / 1000;
-                                                                    } else {
-                                                                        // Non-weight items: 1 pkg = 1 kg
-                                                                        weightInKg = count;
+                                                                if (meta) {
+                                                                    const rawUnit = String(meta.unit || '').trim().toLowerCase();
+                                                                    const isWeight = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
+
+                                                                    let type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : null;
+                                                                    if (!type || type === 'kart') {
+                                                                        const orderMeta = reportData.orderMetadata?.[rowIdx];
+                                                                        // Try to find derived type from orderMetadata using meta.id
+                                                                        if (orderMeta?.originalItems && meta.id) {
+                                                                            const originalItem = (orderMeta.originalItems as any[]).find(
+                                                                                (item: any) => String(item.productId) === String(meta.id)
+                                                                            );
+                                                                            if (originalItem?.packageType) {
+                                                                                type = originalItem.packageType;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    if (!type || type === 'kart') {
+                                                                        type = extractPackageType(meta.name + " " + (meta.additionalInfo || "")) || type;
+                                                                    }
+                                                                    if (!type) {
+                                                                        const u = (meta.unit || '').toLowerCase();
+                                                                        type = (u !== 'шт' && u !== 'szt') ? meta.unit || 'kart' : 'kart';
                                                                     }
 
-                                                                    return (
-                                                                        <div className="mt-0.5">
-                                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-zinc-50 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 rounded border border-zinc-200 dark:border-zinc-700">
-                                                                                {Number(count).toFixed(1)} {type}
-                                                                                <span className="text-blue-600 dark:text-blue-400 ml-0.5 font-semibold">
-                                                                                    ({weightInKg.toFixed(2)} kg)
-                                                                                </span>
-                                                                            </span>
-                                                                        </div>
-                                                                    );
+                                                                    if (isWeight) {
+                                                                        displayValue = ['g', 'г'].includes(rawUnit) ? qty / 1000 : qty;
+                                                                        displayUnit = 'kg';
+                                                                    } else {
+                                                                        // Non-weight items: Show package count
+                                                                        if (pkgCount > 0 || qty === 0) {
+                                                                            displayValue = pkgCount;
+                                                                            displayUnit = type;
+                                                                        } else {
+                                                                            displayValue = qty;
+                                                                            displayUnit = meta.unit || '';
+                                                                        }
+                                                                    }
                                                                 }
-                                                                return null;
+
+                                                                return (
+                                                                    <div className={cn("flex items-center", colIdx === 1 && "justify-center")}>
+                                                                        <EditableCell
+                                                                            value={typeof displayValue === 'number' ? displayValue.toFixed(0) : displayValue}
+                                                                            onUpdate={(newVal) => handleCellUpdate(rowIdx, colIdx, newVal)}
+                                                                            unit={displayUnit}
+                                                                        />
+                                                                    </div>
+                                                                );
                                                             })()}
                                                         </div>
                                                     ) : (
-                                                        <div className="p-2 truncate flex flex-col tabular-nums" title={typeof cell === 'string' || typeof cell === 'number' ? String(cell) : ''}>
+                                                        <div className={cn("p-2 truncate flex flex-col tabular-nums", header === 'Вага' && "items-center")} title={typeof cell === 'string' || typeof cell === 'number' ? String(cell) : ''}>
                                                             <span className={cn(header === 'Вага' && "font-bold", colIdx === 0 && "font-semibold")}>
                                                                 {formatCell(cell, colIdx)}
                                                             </span>
@@ -1259,7 +1367,10 @@ export default function ReportDetailPage() {
                                         {/* Actions Column */}
                                         {/* Actions Column */}
 
-                                        <td className="px-2 py-3.5 text-center border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky right-0 z-20 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)]" style={{ width: '150px', minWidth: '150px' }}>
+                                        <td className={cn(
+                                            "px-2 py-3.5 text-center border-b border-zinc-100 dark:border-zinc-800 sticky right-0 z-20 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)]",
+                                            dColor ? dColor.bg : "bg-white dark:bg-zinc-900"
+                                        )} style={{ width: '150px', minWidth: '150px' }}>
                                             <div className="flex items-center justify-between gap-2">
                                                 {/* Driver Select */}
                                                 <div className="flex-1 min-w-[80px]">
@@ -1336,16 +1447,16 @@ export default function ReportDetailPage() {
                                                 left: left !== undefined ? `${left}px` : undefined
                                             }}
                                             className={cn(
-                                                "px-4 py-4 text-zinc-900 dark:text-zinc-100 whitespace-nowrap border-r border-zinc-200/50 dark:border-zinc-700 overflow-hidden font-bold bg-zinc-50/50 dark:bg-zinc-800/50",
+                                                "px-4 py-4 text-zinc-900 dark:text-zinc-100 whitespace-nowrap border-r border-zinc-200/50 dark:border-zinc-700 overflow-hidden font-bold bg-zinc-50 dark:bg-zinc-800",
                                                 idx < 2 && "sticky z-20 bg-zinc-50 dark:bg-zinc-800 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]",
-                                                idx === 1 && "text-blue-700 dark:text-blue-300",
+                                                idx < 2 && "text-blue-600 dark:text-blue-400 text-center",
                                             )}>
                                             <div className="flex flex-col tabular-nums">
                                                 {/* If index 0, show "TOTAL (вага)" instead of standard client text */}
                                                 {idx === 0 ? (
                                                     <span className="font-bold text-zinc-600 dark:text-zinc-400">TOTAL (вага)</span>
                                                 ) : (
-                                                    <div className="flex items-baseline gap-1">
+                                                    <div className={cn("flex items-baseline gap-1", idx === 1 && "justify-center")}>
                                                         {(() => {
                                                             const meta = reportData.headerMetadata?.[idx];
                                                             const unit = String(meta?.unit || '').trim().toLowerCase();
@@ -1353,28 +1464,30 @@ export default function ReportDetailPage() {
 
                                                             // If weight column, show the normal sum (cell value)
                                                             if (idx === 1 || isWeight) {
-                                                                return Number(cell) !== 0 ? (
+                                                                if (Number(cell) === 0) return null;
+
+                                                                const val = Number(cell);
+                                                                const displayVal = ['g', 'г'].includes(unit) ? val / 1000 : val;
+
+                                                                return (
                                                                     <>
-                                                                        <span>{formatCell(cell, idx)}</span>
-                                                                        {idx > 1 && meta?.unit && (
-                                                                            <span className="text-[10px] text-zinc-500 font-normal select-none">{meta.unit}</span>
-                                                                        )}
+                                                                        <span>{displayVal.toFixed(0)} kg</span>
                                                                     </>
-                                                                ) : null;
+                                                                );
                                                             }
 
                                                             // If non-weight (e.g. stz), check package count to derive weight (1 pkg = 1 kg)
                                                             // We do NOT show the 'stz' sum here anymore.
                                                             const pkgData = reportData.packageCountFooter?.[idx];
                                                             const pkgCount = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
+                                                            const pkgType = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : (meta?.unit || '');
 
                                                             if (pkgCount > 0) {
                                                                 return (
                                                                     <>
-                                                                        <span className="text-blue-600 dark:text-blue-400 font-medium">
-                                                                            {pkgCount.toFixed(2)}
+                                                                        <span>
+                                                                            {Number.isInteger(pkgCount) ? pkgCount.toFixed(0) : pkgCount.toFixed(1)} kg
                                                                         </span>
-                                                                        <span className="text-[10px] text-zinc-400 font-normal select-none">kg</span>
                                                                     </>
                                                                 );
                                                             }
@@ -1400,14 +1513,15 @@ export default function ReportDetailPage() {
                                     if (idx === 0) {
                                         content = <span className="font-bold text-zinc-600 dark:text-zinc-400">TOTAL (пак.)</span>;
                                     } else if (idx !== 1) {
+                                        const meta = reportData.headerMetadata?.[idx];
                                         const pkgData = reportData.packageCountFooter?.[idx];
                                         const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
-                                        const type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
+                                        const type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : (meta?.unit || 'kart');
 
                                         if (count > 0) {
                                             content = (
-                                                <div className="flex items-baseline gap-1 tabular-nums">
-                                                    <span>{Number(count).toFixed(1)}</span>
+                                                <div className={cn("flex items-baseline gap-1 tabular-nums", idx === 1 && "justify-center")}>
+                                                    <span>{Number.isInteger(Number(count)) ? Number(count).toFixed(0) : Number(count).toFixed(1)}</span>
                                                     <span className="text-[10px] text-zinc-500 font-normal select-none">{type}</span>
                                                 </div>
                                             );
@@ -1425,7 +1539,7 @@ export default function ReportDetailPage() {
                                             className={cn(
                                                 "px-4 py-3 text-zinc-900 dark:text-zinc-100 whitespace-nowrap border-r border-zinc-200 dark:border-zinc-700 overflow-hidden font-bold",
                                                 idx < 2 && "sticky z-20 bg-zinc-100 dark:bg-zinc-800",
-                                                idx === 1 && "shadow-[4px_0_8px_-2px_rgba(0,0,0,0.1)] clip-right",
+                                                idx < 2 && "shadow-[4px_0_8px_-2px_rgba(0,0,0,0.1)] clip-right text-blue-600 dark:text-blue-400 text-center",
                                             )}>
                                             {content}
                                         </td>
@@ -1442,184 +1556,172 @@ export default function ReportDetailPage() {
                                 <tr className="bg-slate-800 dark:bg-slate-900 shadow-md relative z-20">
                                     <td
                                         colSpan={reportData.headers.length + 1}
-                                        className="px-4 py-3 text-sm font-bold text-white uppercase tracking-wider sticky left-0 top-[45px] z-20 shadow-md"
+                                        className="px-0 py-0 text-sm font-bold text-white uppercase tracking-wider sticky left-0 top-[48px] z-30 shadow-md bg-slate-800 dark:bg-slate-900 border-b border-white/10"
                                     >
-                                        <div className="flex items-center justify-between w-full pr-4">
-                                            <div className="flex items-center gap-2">
+                                        <div className="flex items-center justify-between w-full h-12 relative px-4">
+                                            {/* Sticky Label (Left) */}
+                                            <div className="flex items-center gap-2 sticky left-4 z-40 bg-slate-800 dark:bg-slate-900 py-1 pr-4">
                                                 <Truck size={16} className="text-blue-400" />
-                                                <span className="text-blue-100">Логістика / Водії</span>
+                                                <span className="text-blue-100 whitespace-nowrap uppercase tracking-wider font-black">Логістика / Водії</span>
                                             </div>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-7 px-2 text-[10px] bg-slate-700 hover:bg-slate-600 border-slate-600 text-blue-100 uppercase font-bold tracking-wider transition-colors"
-                                                onClick={handleCopyAllDrivers}
-                                            >
-                                                <Copy size={12} className="mr-1.5" />
-                                                Копіювати всіх
-                                            </Button>
+
+                                            {/* Sticky Button (Right) */}
+                                            <div className="sticky right-4 z-40 bg-slate-800 dark:bg-slate-900 py-1 pl-4">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-8 px-4 text-[10px] bg-blue-600 hover:bg-blue-500 border-none text-white uppercase font-black tracking-widest transition-all shadow-lg hover:shadow-blue-500/20 active:scale-95"
+                                                    onClick={handleCopyAllDrivers}
+                                                >
+                                                    <Copy size={12} className="mr-2" />
+                                                    Копіювати всіх
+                                                </Button>
+                                            </div>
                                         </div>
                                     </td>
                                 </tr>
 
-                                {driverRows.map((row, rowIdx) => (
-                                    <tr key={`driver-${rowIdx}`} className="group hover:bg-zinc-50 dark:hover:bg-zinc-800/50 border-b border-zinc-100 dark:border-zinc-800 last:border-0 border-l-[3px] border-l-blue-500 bg-blue-50/10">
-                                        {/* Driver Name Cell (Editable) */}
-                                        <td className="px-0 py-0 border-r border-zinc-100 dark:border-zinc-800 sticky left-0 z-20 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800" style={{ width: '150px', minWidth: '150px' }}>
-                                            <div className="flex items-center gap-1 pr-2">
-                                                <div className="flex-1">
-                                                    <EditableCell
-                                                        value={row[0]}
-                                                        onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, 0, newVal)}
-                                                    />
+                                {driverRows.map((row, rowIdx) => {
+                                    const dColor = getDriverColor(rowIdx);
+                                    return (
+                                        <tr key={`driver-${rowIdx}`} className={cn(
+                                            "group border-b border-zinc-100 dark:border-zinc-800 last:border-0 border-l-[4px] bg-white dark:bg-zinc-900 transition-colors",
+                                            dColor ? `${dColor.bg} ${dColor.border}` : "bg-blue-50/10 border-l-blue-500"
+                                        )}>
+                                            {/* Driver Name Cell (Editable) */}
+                                            <td
+                                                className={cn(
+                                                    "px-0 py-0 border-r border-zinc-100 dark:border-zinc-800 sticky left-0 z-20 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.1)]",
+                                                    dColor ? dColor.bg : "bg-white dark:bg-zinc-900"
+                                                )}
+                                                style={{
+                                                    width: `${getColumnWidth(0)}px`,
+                                                    minWidth: `${getColumnWidth(0)}px`,
+                                                    maxWidth: `${getColumnWidth(0)}px`,
+                                                    left: 0
+                                                }}
+                                            >
+                                                <div className="flex items-center gap-1 pr-2">
+                                                    <div className="flex-1">
+                                                        <EditableCell
+                                                            value={row[0]}
+                                                            onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, 0, newVal)}
+                                                        />
+                                                    </div>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="w-6 h-6 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                                                        onClick={() => handleCopyDriverVertical(rowIdx)}
+                                                        title="Копіювати вертикально"
+                                                    >
+                                                        <Copy size={12} />
+                                                    </Button>
                                                 </div>
+                                            </td>
+
+                                            {/* Data Cells */}
+                                            {row.map((cell, colIdx) => {
+                                                if (colIdx === 0) return null; // Skip name cell handled above
+
+                                                const meta = reportData.headerMetadata?.[colIdx]; // Changed from 'report' to 'reportData'
+                                                const header = meta?.name || '';
+
+                                                return (
+                                                    <td
+                                                        key={`${rowIdx}-${colIdx}`}
+                                                        style={{
+                                                            width: `${getColumnWidth(colIdx)}px`,
+                                                            minWidth: `${getColumnWidth(colIdx)}px`,
+                                                            maxWidth: `${getColumnWidth(colIdx)}px`,
+                                                            left: getStickyLeft(colIdx) !== undefined ? `${getStickyLeft(colIdx)}px` : undefined
+                                                        }}
+                                                        className={cn(
+                                                            "px-0 py-0 border-r border-zinc-100 dark:border-zinc-800 text-xs transition-colors overflow-hidden",
+                                                            colIdx === 1 && "sticky z-20 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.1)] clip-right",
+                                                            colIdx === 1 && (dColor ? dColor.bg + " text-center text-blue-600 dark:text-blue-400" : "bg-blue-50/10 dark:bg-blue-900/10 text-center text-blue-600 dark:text-blue-400"),
+                                                            (header === 'Вага' || header.toLowerCase().includes('total') || header.toLowerCase().includes('сума')) && (dColor ? "text-center text-blue-600 dark:text-blue-400" : "font-medium bg-blue-50/30 dark:bg-blue-900/10 px-4 text-blue-600 dark:text-blue-400 text-center")
+                                                        )}>
+                                                        <div className={cn("flex flex-col relative group/cell min-h-[40px] justify-center", colIdx === 1 && "items-center")}>
+                                                            {(() => {
+                                                                const qty = Number(cell) || 0;
+                                                                const meta = reportData.headerMetadata?.[colIdx];
+
+                                                                let displayValue: any = cell;
+                                                                let displayUnit = 'kg';
+
+                                                                if (colIdx === 1) {
+                                                                    displayValue = typeof cell === 'object' ? cell.weight : cell;
+                                                                } else {
+                                                                    const pkgData = driverPackageCountRows?.[rowIdx]?.[colIdx];
+                                                                    const pkgCount = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
+
+                                                                    if (meta) {
+                                                                        const unit = meta.unit?.toLowerCase().trim();
+                                                                        let type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : null;
+                                                                        if (!type || type === 'kart') {
+                                                                            type = extractPackageType(meta.name + " " + (meta.additionalInfo || "")) || type;
+                                                                        }
+                                                                        if (!type) {
+                                                                            const u = unit || '';
+                                                                            type = (u !== 'шт' && u !== 'szt') ? meta.unit || 'kart' : 'kart';
+                                                                        }
+
+                                                                        if (['kg', 'кг'].includes(unit)) {
+                                                                            displayValue = qty;
+                                                                            displayUnit = 'kg';
+                                                                        } else if (['g', 'г'].includes(unit)) {
+                                                                            displayValue = qty / 1000;
+                                                                            displayUnit = 'kg';
+                                                                        } else if (meta.netWeight > 0) {
+                                                                            // High preference for explicit weight even if not in kg/g units
+                                                                            displayValue = qty * meta.netWeight;
+                                                                            displayUnit = 'kg';
+                                                                        } else {
+                                                                            // Non-weight items: Show package count
+                                                                            if (pkgCount > 0 || qty === 0) {
+                                                                                displayValue = pkgCount;
+                                                                                displayUnit = type;
+                                                                            } else {
+                                                                                displayValue = qty;
+                                                                                displayUnit = meta.unit || '';
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+
+                                                                return (
+                                                                    <div className={cn("flex items-center", colIdx === 1 && "justify-center")}>
+                                                                        <EditableCell
+                                                                            value={typeof displayValue === 'number' ? (colIdx === 1 ? `${displayValue.toFixed(0)} kg` : displayValue.toFixed(0)) : displayValue}
+                                                                            onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, colIdx, newVal)}
+                                                                            unit={colIdx === 1 ? undefined : (displayUnit === 'kg' ? undefined : displayUnit)}
+                                                                            readOnly={colIdx === 1} // Only Total Weight is read-only
+                                                                            className={cn("font-bold text-sm", colIdx === 1 ? "text-blue-600 dark:text-blue-400" : dColor?.text)}
+                                                                        />
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    </td>
+                                                );
+                                            })}
+
+                                            {/* Remove Button */}
+                                            <td className="px-2 py-3 text-center border-l border-blue-100 dark:border-blue-800 bg-white dark:bg-zinc-900 sticky right-0 z-10" style={{ width: '100px', minWidth: '100px' }}>
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
-                                                    className="w-6 h-6 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-                                                    onClick={() => handleCopyDriverVertical(rowIdx)}
-                                                    title="Копіювати вертикально"
+                                                    onClick={() => handleRemoveDriver(rowIdx)}
+                                                    className="w-8 h-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                    title="Видалити водія"
                                                 >
-                                                    <Copy size={12} />
+                                                    <Trash2 size={16} />
                                                 </Button>
-                                            </div>
-                                        </td>
-
-                                        {/* Data Cells */}
-                                        {row.map((cell, colIdx) => {
-                                            if (colIdx === 0) return null; // Skip name cell handled above
-
-                                            const meta = reportData.headerMetadata?.[colIdx]; // Changed from 'report' to 'reportData'
-                                            const header = meta?.name || '';
-
-                                            return (
-                                                <td
-                                                    key={`${rowIdx}-${colIdx}`}
-                                                    className={cn(
-                                                        "px-0 py-0 border-r border-zinc-100 dark:border-zinc-800 text-xs transition-colors",
-                                                        header === 'Вага' && "font-medium bg-blue-50/30 dark:bg-blue-900/10 px-4 text-blue-800 dark:text-blue-200"
-                                                    )}>
-                                                    <div className="flex flex-col relative group/cell min-h-[40px] justify-center">
-                                                        {/* Main Cell Value (with logic to hide if complex object handling breakdown) */}
-                                                        {(() => {
-                                                            // For the total column (index 1), if it has complex data (packagesByUnit),
-                                                            // we might want to hide the standard value because we render it all in the breakdown below.
-                                                            // However, checking 'cell' structure here.
-                                                            // Based on previous logic, we simply render null here if it's the complex object column, 
-                                                            // and let the package breakdown handle it all.
-                                                            if (colIdx === 1 && typeof cell === 'object' && cell !== null && ('weight' in cell || 'otherUnits' in cell)) {
-                                                                return null;
-                                                            }
-
-                                                            return (
-                                                                <div className="flex items-center">
-                                                                    <EditableCell
-                                                                        value={colIdx === 1 && typeof cell !== 'object' ? cell : formatCell(cell, colIdx)}
-                                                                        onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, colIdx, newVal)}
-                                                                        unit={meta?.unit}
-                                                                        readOnly={true}
-                                                                    />
-                                                                </div>
-                                                            );
-                                                        })()}
-
-                                                        {/* Package Breakdown or Count */}
-                                                        {(() => {
-                                                            const pkgData = driverPackageCountRows?.[rowIdx]?.[colIdx];
-
-                                                            // Special handling for Driver Total Column (Breakdown)
-                                                            if (colIdx === 1 && typeof pkgData === 'object' && pkgData?.packagesByUnit) {
-                                                                const valueCell = row[1];
-                                                                const unitsToDisplay = new Set<string>();
-
-                                                                // Only show 'kg' (Total Weight). All packages are now aggregated under 'kg'.
-                                                                // We ignore 'otherUnits' entirely for the Total column.
-                                                                if (valueCell?.weight > 0 || pkgData.packagesByUnit?.['kg']) {
-                                                                    unitsToDisplay.add('kg');
-                                                                }
-
-                                                                const sortedUnits = Array.from(unitsToDisplay); // No sort needed, just 'kg' 
-
-                                                                return (
-                                                                    <div className="flex flex-col gap-2 mt-1 px-2 pb-2">
-                                                                        {sortedUnits.map(unit => {
-                                                                            const isKg = unit === 'kg';
-                                                                            // Always 'kg' now, but keeping structure if we ever reverb
-                                                                            let quantity = valueCell?.weight || 0;
-
-                                                                            const packages = pkgData.packagesByUnit?.[unit] || {};
-                                                                            const hasPackages = Object.keys(packages).length > 0;
-
-                                                                            if (quantity === 0 && !hasPackages) return null;
-
-                                                                            return (
-                                                                                <div key={unit} className="flex flex-col gap-0.5 border-l-2 border-blue-200 pl-1.5">
-                                                                                    <div className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300">
-                                                                                        {isKg ? `${quantity.toFixed(2)} kg` : `${quantity.toFixed(1)} ${unit}`}
-                                                                                    </div>
-
-                                                                                    {hasPackages && (
-                                                                                        <div className="flex flex-wrap gap-1">
-                                                                                            {Object.entries(packages).map(([type, count]) => (
-                                                                                                <div key={`${unit}-${type}`} className="px-1.5 py-0.5 text-[9px] text-zinc-500 font-medium bg-zinc-100 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
-                                                                                                    {Number(count).toFixed(1)} {type}
-                                                                                                </div>
-                                                                                            ))}
-                                                                                        </div>
-                                                                                    )}
-                                                                                </div>
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                );
-                                                            }
-
-                                                            // Standard Package Rendering for other columns
-                                                            const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
-                                                            const type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
-
-                                                            if (count > 0) {
-                                                                const unit = meta?.unit?.toLowerCase().trim();
-                                                                const isKg = ['kg', 'кг'].includes(unit || '');
-                                                                const isG = ['g', 'г'].includes(unit || '');
-
-                                                                let weightInKg = 0;
-                                                                if (isKg) {
-                                                                    weightInKg = Number(cell) || 0;
-                                                                } else if (isG) {
-                                                                    weightInKg = (Number(cell) || 0) / 1000;
-                                                                } else {
-                                                                    // Non-weight: 1 pkg = 1 kg
-                                                                    weightInKg = count;
-                                                                }
-
-                                                                return (
-                                                                    <div className="px-2 py-0.5 text-[10px] text-zinc-500 font-medium bg-zinc-100 dark:bg-zinc-800 rounded w-fit mt-1 ml-2 mb-1 border border-zinc-200/50 dark:border-zinc-700">
-                                                                        {Number(count).toFixed(1)} {type} <span className="text-blue-600 dark:text-blue-400 font-semibold ml-0.5">({weightInKg.toFixed(2)} kg)</span>
-                                                                    </div>
-                                                                );
-                                                            }
-                                                            return null;
-                                                        })()}
-                                                    </div>
-                                                </td>
-                                            );
-                                        })}
-
-                                        {/* Remove Button */}
-                                        <td className="px-2 py-3 text-center border-l border-blue-100 dark:border-blue-800 bg-white dark:bg-zinc-900 sticky right-0 z-10" style={{ width: '100px', minWidth: '100px' }}>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => handleRemoveDriver(rowIdx)}
-                                                className="w-8 h-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                                title="Видалити водія"
-                                            >
-                                                <Trash2 size={16} />
-                                            </Button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         )}
                     </table>

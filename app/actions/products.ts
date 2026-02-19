@@ -823,6 +823,7 @@ export async function getAggregationData(startDate: string, endDate: string) {
         // Prepare Rows
         const dataRows: any[][] = [];
         const packageCountRows: any[][] = [];
+        const clientEmails: { [rowIdx: number]: string } = {};
 
 
         for (let i = 0; i < filteredOrders.length; i++) {
@@ -972,8 +973,33 @@ export async function getAggregationData(startDate: string, endDate: string) {
                     const weightPerPack = Number(item.netWeight || product?.netWeight || 0);
                     weight = (pkgCount || 0) * weightPerPack;
                 } else {
-                    // Case 3: Pure pieces. DO NOT ADD TO TOTAL WEIGHT.
-                    weight = 0;
+                    // Case 3: Pure pieces.
+                    // New Requirement: Treat as 1kg per package
+                    let pkgCount = item.packageCount;
+                    if (!pkgCount && pkgCount !== 0) { // Check strictly for null/undefined if 0 is valid
+                        const parsed = parseInt(item.additionalInfo);
+                        if (!isNaN(parsed) && parsed > 0) {
+                            pkgCount = parsed;
+                        } else {
+                            // Only if we can infer package count
+                            const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
+                            if (inPack > 0) {
+                                pkgCount = (qty / inPack);
+                            } else {
+                                // If no package info, treat as 0 weight or 0 packages?
+                                // If it's pure pieces and we have NO idea about packages, likely 0.
+                                // But if it's "10 pcs", maybe it's 1 package?
+                                // Safer to assume 1 package if qty > 0 and no other info?
+                                // User said "1 package = 1kg".
+                                // If we don't know packages, we can't add weight.
+                                pkgCount = 0;
+                            }
+                        }
+                    }
+
+                    if (pkgCount > 0) {
+                        weight = pkgCount * 1; // 1kg per package
+                    }
                 }
 
                 rowTotalWeight += weight;
@@ -1001,6 +1027,7 @@ export async function getAggregationData(startDate: string, endDate: string) {
 
             dataRows.push(row);
             packageCountRows.push(pkgRow);
+            clientEmails[i] = order.customerEmail || '';
         }
 
 
@@ -1081,6 +1108,7 @@ export async function getAggregationData(startDate: string, endDate: string) {
                 packageCountRows: packageCountRows,
                 footer: footerRow,
                 packageCountFooter: packageCountFooter,
+                clientEmails: clientEmails,
                 // Store order metadata for each row to enable invoice generation
                 orderMetadata: filteredOrders.map(order => ({
                     orderId: order.id,

@@ -10,7 +10,8 @@ import {
     Trash2,
     Plus,
     FileCheck,
-    Truck
+    Truck,
+    Info
 } from "lucide-react";
 import {
     Select,
@@ -252,6 +253,114 @@ export default function ReportDetailPage() {
         }
     };
 
+    const getDriverVerticalText = (rowIdx: number): string | null => {
+        const row = driverRows[rowIdx];
+        if (!row) return null;
+
+        const driverName = row[0];
+        const lines: string[] = [];
+
+        // Header: name with tabs to span across columns
+        lines.push(`${driverName}\t\t`);
+
+        // Products start at index 2
+        for (let i = 2; i < row.length; i++) {
+            const qty = Number(row[i]) || 0;
+            const header = reportData.headers[i];
+            const meta = reportData.headerMetadata?.[i];
+            const unit = meta?.unit || '';
+            const rawUnit = unit.trim().toLowerCase();
+            const isWeight = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
+
+            // Add package info
+            const pkgData = driverPackageCountRows?.[rowIdx]?.[i];
+            const pkgCount = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
+            const pkgType = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
+
+            let qtyVal = '';
+            let qtyUnit = '';
+            if (isWeight) {
+                qtyVal = qty.toFixed(2);
+                qtyUnit = unit;
+            } else {
+                // Non-weight items: Use packages as primary quantity if available
+                if (pkgCount > 0) {
+                    qtyVal = pkgCount.toFixed(1);
+                    qtyUnit = pkgType;
+                } else {
+                    qtyVal = qty.toFixed(2);
+                    qtyUnit = unit;
+                }
+            }
+
+            const cleanHeader = header.split(' [ID:')[0];
+            // 3 columns: Product Name [Tab] Value [Tab] Unit/Pkg
+            lines.push(`${cleanHeader}\t${qtyVal}\t${qtyUnit}`);
+        }
+
+        if (lines.length <= 1) return null; // Only driver name
+
+        // Get total weight (Column 1 is complex object {weight, otherUnits})
+        const totalWeightData = row[1];
+        const totalWeight = typeof totalWeightData === 'object' && totalWeightData !== null ? (totalWeightData.weight || 0) : (Number(totalWeightData) || 0);
+
+        lines.push(`TOTAL\t${totalWeight.toFixed(2)}\tkg`);
+
+        return lines.join('\n');
+    }
+
+    const handleCopyDriverVertical = (rowIdx: number) => {
+        const text = getDriverVerticalText(rowIdx);
+        if (!text) {
+            toast.error('Немає товарів для копіювання');
+            return;
+        }
+
+        navigator.clipboard.writeText(text).then(() => {
+            toast.success('Скопійовано!');
+        }).catch(() => {
+            toast.error('Помилка копіювання');
+        });
+    };
+
+    const handleCopyAllDrivers = () => {
+        const driversData: string[][] = [];
+
+        for (let i = 0; i < driverRows.length; i++) {
+            const text = getDriverVerticalText(i);
+            if (text) {
+                driversData.push(text.split('\n'));
+            }
+        }
+
+        if (driversData.length === 0) {
+            toast.error('Немає даних для копіювання');
+            return;
+        }
+
+        // Find the maximum number of lines among all drivers to know how many rows we need
+        const maxLines = Math.max(...driversData.map(d => d.length));
+        const finalLines: string[] = [];
+
+        for (let lineIdx = 0; lineIdx < maxLines; lineIdx++) {
+            let combinedLine = '';
+            for (let driverIdx = 0; driverIdx < driversData.length; driverIdx++) {
+                // Get the line for this driver at the current index, or empty tabs if they have no more lines
+                const line = driversData[driverIdx][lineIdx] || '\t\t';
+                combinedLine += line + '\t\t'; // Add extra spacing between drivers
+            }
+            finalLines.push(combinedLine.trimEnd());
+        }
+
+        const fullText = finalLines.join('\n');
+
+        navigator.clipboard.writeText(fullText).then(() => {
+            toast.success('Дані всіх водіїв скопійовано горизонтально!');
+        }).catch(() => {
+            toast.error('Помилка копіювання');
+        });
+    }
+
     const handleCellUpdate = async (rowIdx: number, headerIdx: number, newValue: string) => {
         if (!report || !report.data) return false;
 
@@ -269,54 +378,12 @@ export default function ReportDetailPage() {
         newRow[headerIdx] = val;
         newRows[rowIdx] = newRow;
 
-        // 2. Recalculate Row Total (Index 1 is 'Вага', Products start at Index 2)
-        if (isNumberCol && headerIdx >= 2) {
-            let rowTotal = 0;
-            for (let i = 2; i < newRow.length; i++) {
-                const colHeader = newData.headers[i];
-                const meta = newData.headerMetadata?.[i];
-
-                // Check metadata for unit, fallback to header string check
-                let isWeightColumn = false;
-                if (meta && meta.unit) {
-                    isWeightColumn = ['kg', 'кг', 'g', 'г'].includes(meta.unit.toLowerCase());
-                } else if (colHeader) {
-                    isWeightColumn = colHeader.includes('(кг)');
-                }
-
-                if (isWeightColumn) {
-                    rowTotal += Number(newRow[i]) || 0;
-                }
-            }
-            newRow[1] = rowTotal;
-        }
-
-        // 3. Recalculate Footer for Modified Column
-        if (isNumberCol) {
-            let colTotal = 0;
-            for (let r = 0; r < newRows.length; r++) {
-                colTotal += Number(newRows[r][headerIdx]) || 0;
-            }
-            newFooter[headerIdx] = colTotal;
-        }
-
-        // 4. Recalculate Footer for Grand Total (Index 1)
-        if (isNumberCol && headerIdx >= 1) {
-            let totalWeight = 0;
-            for (let r = 0; r < newRows.length; r++) {
-                totalWeight += Number(newRows[r][1]) || 0; // Sum up the row totals
-            }
-            newFooter[1] = totalWeight;
-        }
-
-        newData.rows = newRows;
-        newData.footer = newFooter;
-
-        // 5. Recalculate Package Counts
+        // 2. Recalculate Package Count for the Modified Cell (moved up)
         if (headerIdx >= 2 && newData.packageCountRows) {
             const newPackageCountRows = [...newData.packageCountRows];
             const newPkgRow = [...newPackageCountRows[rowIdx]];
             const meta = newData.headerMetadata?.[headerIdx];
+
             if (meta) {
                 const weightOrQty = Number(val) || 0;
                 let newPkgCount = 0;
@@ -336,27 +403,15 @@ export default function ReportDetailPage() {
                     // Try to find packageCount from original order items
                     let foundFromOriginal = false;
                     const orderMeta = newData.orderMetadata?.[rowIdx];
-                    console.log(`[PKG CLIENT]   -> Looking for original items, orderMeta exists:`, !!orderMeta);
+
                     if (orderMeta?.originalItems) {
-                        console.log(`[PKG CLIENT]   -> All original items:`, (orderMeta.originalItems as any[]).map((item: any) => ({
-                            name: item.name,
-                            productId: item.productId,
-                            productIdType: typeof item.productId
-                        })));
                         const header = newData.headers[headerIdx];
                         const idMatch = header.match(/\[ID:(\d+)\]/);
                         const productId = idMatch ? idMatch[1] : null;
-                        console.log(`[PKG CLIENT]   -> ProductId from header: ${productId} (type: ${typeof productId})`);
                         if (productId) {
                             const originalItem = (orderMeta.originalItems as any[]).find(
                                 (item: any) => String(item.productId) === productId
                             );
-                            console.log(`[PKG CLIENT]   -> Found original item:`, originalItem ? {
-                                name: originalItem.name,
-                                quantity: originalItem.quantity,
-                                packageCount: originalItem.packageCount,
-                                packageType: originalItem.packageType
-                            } : 'NOT FOUND');
                             if (originalItem) {
                                 const origQty = Number(originalItem.quantity) || 0;
                                 const origPkgCount = Number(originalItem.packageCount) || 0;
@@ -364,38 +419,23 @@ export default function ReportDetailPage() {
                                     const ratio = origPkgCount / origQty;
                                     newPkgCount = weightOrQty * ratio;
                                     foundFromOriginal = true;
-                                    console.log(`[PKG CLIENT]   -> Using original ratio: ${origPkgCount}/${origQty} = ${ratio}, newPkgCount=${newPkgCount}`);
                                 }
                             }
                         }
                     }
 
                     if (!foundFromOriginal) {
-                        // Try to parse from meta.additionalInfo (e.g., "3 ggg" means 3 packages)
                         if (meta.additionalInfo) {
                             const match = meta.additionalInfo.match(/^(\d+(?:\.\d+)?)\s+(.+)/);
                             if (match) {
                                 const pkgCountFromMeta = parseFloat(match[1]);
-                                console.log(`[PKG CLIENT]   -> Found packageCount in meta.additionalInfo: ${pkgCountFromMeta}, unitPerCardboard=${meta.unitPerCardboard}`);
-
-                                // If we have unitPerCardboard, calculate ratio
-                                // For KG products, we check if netWeight is available to calculate ratio (packages per kg)
-                                // e.g. 10kg corresponds to 2 cartons -> ratio = 2 / 10 = 0.2 cartons/kg
                                 if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
                                     if (meta.netWeight > 0 && pkgCountFromMeta > 0) {
                                         const ratio = pkgCountFromMeta / meta.netWeight;
                                         newPkgCount = weightOrQty * ratio;
                                         foundFromOriginal = true;
-                                        console.log(`[PKG CLIENT]   -> Using meta KG ratio: ${pkgCountFromMeta}/${meta.netWeight} = ${ratio}, newPkgCount=${newPkgCount}`);
-                                    } else {
-                                        // Fallback if no netWeight: maybe simple division if pkgCount is meant as weight?
-                                        // But user says "10kg -> 2 kart", so likely ratio.
-                                        // If no netWeight, we can't determine ratio. Default to 0?
-                                        // Or maybe pkgCountFromMeta IS the default pack count for 1 unit? Unlikely for KG.
-                                        console.log(`[PKG CLIENT]   -> Cannot calculate KG ratio without netWeight. meta.netWeight=${meta.netWeight}`);
                                     }
                                 } else {
-                                    // For piecewise products
                                     if (meta.unitPerCardboard > 0 && pkgCountFromMeta > 0) {
                                         const ratio = pkgCountFromMeta / meta.unitPerCardboard;
                                         newPkgCount = weightOrQty * ratio;
@@ -407,23 +447,18 @@ export default function ReportDetailPage() {
                     }
 
                     if (!foundFromOriginal) {
-                        // Fallback to metadata-based calculation
-                        console.log(`[PKG CLIENT]   -> Using fallback calculation, unit=${meta.unit}, netWeight=${meta.netWeight}, unitPerCardboard=${meta.unitPerCardboard}`);
                         if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
                             if (meta.netWeight > 0) newPkgCount = weightOrQty / meta.netWeight;
                         } else {
                             if (meta.unitPerCardboard > 0) newPkgCount = weightOrQty / meta.unitPerCardboard;
                         }
-                        console.log(`[PKG CLIENT]   -> Fallback result: newPkgCount=${newPkgCount}`);
                     }
                 }
 
-                // Determine packageType:
-                // 1. Try to preserve from original data
+                // Determine packageType
                 const originalData = report.data.packageCountRows?.[rowIdx]?.[headerIdx];
                 let existingType = (typeof originalData === 'object' && originalData !== null) ? originalData.packageType : null;
 
-                // 2. If no existing type, try original order items
                 if (!existingType || existingType === 'kart') {
                     const orderMeta = newData.orderMetadata?.[rowIdx];
                     if (orderMeta?.originalItems) {
@@ -441,9 +476,7 @@ export default function ReportDetailPage() {
                     }
                 }
 
-                // 3. If still no type, parse from product metadata
                 if (!existingType || existingType === 'kart') {
-                    // meta.additionalInfo might be like "5 wor" or "3 kart"
                     if (meta.additionalInfo) {
                         const match = meta.additionalInfo.match(/^\d+(?:\.\d+)?\s*(.+)/);
                         if (match && match[1]) {
@@ -452,14 +485,13 @@ export default function ReportDetailPage() {
                     }
                 }
 
-                // 4. Final fallback
                 if (!existingType) {
                     existingType = 'kart';
                 }
 
                 newPkgRow[headerIdx] = { count: newPkgCount, packageType: existingType };
 
-                // Recalculate Row Total Pkg Count (Index 1)
+                // Recalculate Row Total Pkg Count (Index 1) for packages
                 let rowPkgTotal = 0;
                 for (let i = 2; i < newPkgRow.length; i++) {
                     const cell = newPkgRow[i];
@@ -471,6 +503,7 @@ export default function ReportDetailPage() {
                 newPackageCountRows[rowIdx] = newPkgRow;
                 newData.packageCountRows = newPackageCountRows;
 
+                // Update Package Footer
                 if (newData.packageCountFooter) {
                     const newPkgFooter = [...newData.packageCountFooter];
 
@@ -484,17 +517,15 @@ export default function ReportDetailPage() {
 
                         colPkgTotal += count;
 
-                        // Prefer non-'kart' types (same logic as server-side)
                         if (count > 0 && (colPackageType === 'kart' && type !== 'kart')) {
                             colPackageType = type;
                         }
                     }
 
-                    // Store as object with count and type (matching server format)
                     if (colPkgTotal > 0) {
                         newPkgFooter[headerIdx] = { count: colPkgTotal, packageType: colPackageType };
                     } else {
-                        newPkgFooter[headerIdx] = colPkgTotal; // Keep as 0 number
+                        newPkgFooter[headerIdx] = colPkgTotal;
                     }
 
                     // Update grand total (index 1)
@@ -503,11 +534,65 @@ export default function ReportDetailPage() {
                         grandPkgTotal += Number(newPackageCountRows[r][1]) || 0;
                     }
                     newPkgFooter[1] = grandPkgTotal;
-
                     newData.packageCountFooter = newPkgFooter;
                 }
             }
         }
+
+        // 3. Recalculate Row Total (Index 1 is 'Вага', Products start at Index 2)
+        if (isNumberCol && headerIdx >= 2) {
+            let rowTotal = 0;
+            const pkgRow = newData.packageCountRows?.[rowIdx];
+
+            for (let i = 2; i < newRow.length; i++) {
+                const colHeader = newData.headers[i];
+                const meta = newData.headerMetadata?.[i];
+
+                // Check metadata for unit, fallback to header string check
+                let isWeightColumn = false;
+                if (meta && meta.unit) {
+                    isWeightColumn = ['kg', 'кг', 'g', 'г'].includes(meta.unit.toLowerCase());
+                } else if (colHeader) {
+                    isWeightColumn = colHeader.includes('(кг)');
+                }
+
+                if (isWeightColumn) {
+                    rowTotal += Number(newRow[i]) || 0;
+                } else {
+                    // Treat non-weight unit packages as 1kg each
+                    if (pkgRow) {
+                        const pkgData = pkgRow[i];
+                        const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
+                        if (count > 0) {
+                            rowTotal += count;
+                        }
+                    }
+                }
+            }
+            newRow[1] = rowTotal;
+        }
+
+        // 4. Recalculate Footer for Modified Column
+        if (isNumberCol) {
+            let colTotal = 0;
+            for (let r = 0; r < newRows.length; r++) {
+                colTotal += Number(newRows[r][headerIdx]) || 0;
+            }
+            newFooter[headerIdx] = colTotal;
+        }
+
+        // 5. Recalculate Footer for Grand Total (Index 1)
+        if (isNumberCol && headerIdx >= 1) {
+            let totalWeight = 0;
+            for (let r = 0; r < newRows.length; r++) {
+                totalWeight += Number(newRows[r][1]) || 0; // Sum up the row totals
+            }
+            newFooter[1] = totalWeight;
+        }
+
+        newData.rows = newRows;
+        newData.footer = newFooter;
+
 
         // 6. Recalculate Driver Rows if assignments exist
         if (Object.keys(driverAssignments).length > 0) {
@@ -610,10 +695,16 @@ export default function ReportDetailPage() {
         newDriverRows.forEach((row, dIdx) => {
             let totalWeight = 0;
             const otherUnitsMap: Record<string, number> = {};
+            const pkgRow = newDriverPkgRows[dIdx];
 
             for (let i = 2; i < row.length; i++) {
                 const qty = Number(row[i]) || 0;
                 const meta = fullReportData.headerMetadata?.[i];
+
+                // Get pkg count for this cell
+                const pkgCell = pkgRow && pkgRow[i];
+                const pkgCount = typeof pkgCell === 'object' && pkgCell !== null ? pkgCell.count : (Number(pkgCell) || 0);
+
                 if (meta && qty > 0) {
                     const unit = meta.unit?.toLowerCase().trim();
                     if (['kg', 'кг'].includes(unit)) {
@@ -621,19 +712,18 @@ export default function ReportDetailPage() {
                     } else if (['g', 'г'].includes(unit)) {
                         totalWeight += qty / 1000;
                     } else {
-                        // For non-weight units, aggregate them by unit name
-                        // e.g. "pcs", "box", etc.
-                        const unitName = meta.unit || 'other';
-                        otherUnitsMap[unitName] = (otherUnitsMap[unitName] || 0) + qty;
+                        // Treat non-weight unit packages as 1kg each
+                        if (pkgCount > 0) {
+                            totalWeight += pkgCount;
+                        }
                     }
                 }
             }
 
             // Store comprehensive total object instead of just number
-            row[1] = { weight: totalWeight, otherUnits: otherUnitsMap };
+            row[1] = { weight: totalWeight };
 
             // Pkg Total - Group by Unit
-            const pkgRow = newDriverPkgRows[dIdx];
             const packagesByUnit: Record<string, Record<string, number>> = {};
 
             for (let i = 2; i < pkgRow.length; i++) {
@@ -643,12 +733,8 @@ export default function ReportDetailPage() {
 
                 if (count > 0) {
                     const meta = fullReportData.headerMetadata?.[i];
-                    let unit = meta?.unit?.toLowerCase().trim() || 'other';
-
-                    // Normalize weight units to 'kg' for grouping
-                    if (['kg', 'кг', 'g', 'г'].includes(unit)) {
-                        unit = 'kg';
-                    }
+                    // Force all packages to group under 'kg' since everything contributes to total weight now
+                    const unit = 'kg';
 
                     if (!packagesByUnit[unit]) {
                         packagesByUnit[unit] = {};
@@ -1105,10 +1191,17 @@ export default function ReportDetailPage() {
                                                                         const isWeight = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
                                                                         const hasNetWeight = meta.netWeight > 0;
 
-                                                                        // Warning if it's a service (never has weight) OR if it's a piece without defined weight
-                                                                        const showWarning = isService || (!isWeight && !hasNetWeight);
+                                                                        // Check package count
+                                                                        const pkgData = reportData.packageCountRows?.[rowIdx]?.[colIdx];
+                                                                        const pkgCount = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
 
-                                                                        if (showWarning) {
+                                                                        // Case 1: Service or Piece without weight AND NO Packages -> Not included
+                                                                        const notIncluded = (isService || (!isWeight && !hasNetWeight)) && pkgCount <= 0;
+
+                                                                        // Case 2: Piece without weight BUT Has Packages -> Included as 1kg/pkg
+                                                                        const calculatedAsPkg = !isService && !isWeight && !hasNetWeight && pkgCount > 0;
+
+                                                                        if (notIncluded) {
                                                                             return (
                                                                                 <TooltipProvider>
                                                                                     <Tooltip>
@@ -1120,13 +1213,15 @@ export default function ReportDetailPage() {
                                                                                         <TooltipContent side="top">
                                                                                             <p className="text-xs">
                                                                                                 Увага: Цей товар не враховується в загальну вагу замовлення,<br />
-                                                                                                оскільки вага не вказана у Fakturownia.
+                                                                                                оскільки вага не вказана у Fakturownia, а пакування = 0.
                                                                                             </p>
                                                                                         </TooltipContent>
                                                                                     </Tooltip>
                                                                                 </TooltipProvider>
                                                                             );
                                                                         }
+
+                                                                        // calculatedAsPkg case is now handled by the badge below, so no icon needed here.
                                                                     }
                                                                     return null;
                                                                 })()}
@@ -1136,18 +1231,46 @@ export default function ReportDetailPage() {
                                                                 const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
                                                                 const type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
 
-                                                                return count > 0 && (
-                                                                    <div className="px-2 text-[10px] text-zinc-400 font-medium">
-                                                                        [{Number(count).toFixed(1)} {type}]
-                                                                    </div>
-                                                                );
+                                                                if (count > 0) {
+                                                                    const rawUnit = String(meta?.unit || '').trim().toLowerCase();
+                                                                    const isKg = ['kg', 'кг'].includes(rawUnit);
+                                                                    const isG = ['g', 'г'].includes(rawUnit);
+                                                                    const isWeight = isKg || isG;
+
+                                                                    let weightInKg = 0;
+                                                                    if (isKg) {
+                                                                        weightInKg = Number(cell) || 0;
+                                                                    } else if (isG) {
+                                                                        weightInKg = (Number(cell) || 0) / 1000;
+                                                                    } else {
+                                                                        // Non-weight items: 1 pkg = 1 kg
+                                                                        weightInKg = count;
+                                                                    }
+
+                                                                    return (
+                                                                        <div className="mt-0.5">
+                                                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-zinc-50 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 rounded border border-zinc-200 dark:border-zinc-700">
+                                                                                {Number(count).toFixed(1)} {type}
+                                                                                <span className="text-blue-600 dark:text-blue-400 ml-0.5 font-semibold">
+                                                                                    ({weightInKg.toFixed(2)} kg)
+                                                                                </span>
+                                                                            </span>
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                return null;
                                                             })()}
                                                         </div>
                                                     ) : (
                                                         <div className="p-2 truncate flex flex-col tabular-nums" title={typeof cell === 'string' || typeof cell === 'number' ? String(cell) : ''}>
-                                                            <span className={cn(header === 'Вага' && "font-bold")}>
+                                                            <span className={cn(header === 'Вага' && "font-bold", colIdx === 0 && "font-semibold")}>
                                                                 {formatCell(cell, colIdx)}
                                                             </span>
+                                                            {colIdx === 0 && reportData.clientEmails?.[rowIdx] && (
+                                                                <span className="text-[10px] text-zinc-400 font-normal mt-0.5">
+                                                                    {reportData.clientEmails[rowIdx]}
+                                                                </span>
+                                                            )}
 
                                                         </div>
                                                     )}
@@ -1242,17 +1365,45 @@ export default function ReportDetailPage() {
                                                 {/* If index 0, show "TOTAL (вага)" instead of standard client text */}
                                                 {idx === 0 ? (
                                                     <span className="font-bold text-zinc-600 dark:text-zinc-400">TOTAL (вага)</span>
-                                                ) : (Number(cell) !== 0 && (
+                                                ) : (
                                                     <div className="flex items-baseline gap-1">
-                                                        <span>{formatCell(cell, idx)}</span>
                                                         {(() => {
                                                             const meta = reportData.headerMetadata?.[idx];
-                                                            return idx > 1 && meta?.unit && (
-                                                                <span className="text-[10px] text-zinc-500 font-normal select-none">{meta.unit}</span>
-                                                            );
+                                                            const unit = String(meta?.unit || '').trim().toLowerCase();
+                                                            const isWeight = ['kg', 'кг', 'g', 'г'].includes(unit);
+
+                                                            // If weight column, show the normal sum (cell value)
+                                                            if (idx === 1 || isWeight) {
+                                                                return Number(cell) !== 0 ? (
+                                                                    <>
+                                                                        <span>{formatCell(cell, idx)}</span>
+                                                                        {idx > 1 && meta?.unit && (
+                                                                            <span className="text-[10px] text-zinc-500 font-normal select-none">{meta.unit}</span>
+                                                                        )}
+                                                                    </>
+                                                                ) : null;
+                                                            }
+
+                                                            // If non-weight (e.g. stz), check package count to derive weight (1 pkg = 1 kg)
+                                                            // We do NOT show the 'stz' sum here anymore.
+                                                            const pkgData = reportData.packageCountFooter?.[idx];
+                                                            const pkgCount = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
+
+                                                            if (pkgCount > 0) {
+                                                                return (
+                                                                    <>
+                                                                        <span className="text-blue-600 dark:text-blue-400 font-medium">
+                                                                            {pkgCount.toFixed(2)}
+                                                                        </span>
+                                                                        <span className="text-[10px] text-zinc-400 font-normal select-none">kg</span>
+                                                                    </>
+                                                                );
+                                                            }
+
+                                                            return null;
                                                         })()}
                                                     </div>
-                                                ))}
+                                                )}
                                             </div>
                                         </td>
                                     );
@@ -1314,9 +1465,20 @@ export default function ReportDetailPage() {
                                         colSpan={reportData.headers.length + 1}
                                         className="px-4 py-3 text-sm font-bold text-white uppercase tracking-wider sticky left-0 top-[45px] z-20 shadow-md"
                                     >
-                                        <div className="flex items-center gap-2">
-                                            <Truck size={16} className="text-blue-400" />
-                                            <span className="text-blue-100">Логістика / Водії</span>
+                                        <div className="flex items-center justify-between w-full pr-4">
+                                            <div className="flex items-center gap-2">
+                                                <Truck size={16} className="text-blue-400" />
+                                                <span className="text-blue-100">Логістика / Водії</span>
+                                            </div>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 px-2 text-[10px] bg-slate-700 hover:bg-slate-600 border-slate-600 text-blue-100 uppercase font-bold tracking-wider transition-colors"
+                                                onClick={handleCopyAllDrivers}
+                                            >
+                                                <Copy size={12} className="mr-1.5" />
+                                                Копіювати всіх
+                                            </Button>
                                         </div>
                                     </td>
                                 </tr>
@@ -1325,10 +1487,23 @@ export default function ReportDetailPage() {
                                     <tr key={`driver-${rowIdx}`} className="group hover:bg-zinc-50 dark:hover:bg-zinc-800/50 border-b border-zinc-100 dark:border-zinc-800 last:border-0 border-l-[3px] border-l-blue-500 bg-blue-50/10">
                                         {/* Driver Name Cell (Editable) */}
                                         <td className="px-0 py-0 border-r border-zinc-100 dark:border-zinc-800 sticky left-0 z-20 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800" style={{ width: '150px', minWidth: '150px' }}>
-                                            <EditableCell
-                                                value={row[0]}
-                                                onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, 0, newVal)}
-                                            />
+                                            <div className="flex items-center gap-1 pr-2">
+                                                <div className="flex-1">
+                                                    <EditableCell
+                                                        value={row[0]}
+                                                        onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, 0, newVal)}
+                                                    />
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="w-6 h-6 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                                                    onClick={() => handleCopyDriverVertical(rowIdx)}
+                                                    title="Копіювати вертикально"
+                                                >
+                                                    <Copy size={12} />
+                                                </Button>
+                                            </div>
                                         </td>
 
                                         {/* Data Cells */}
@@ -1378,24 +1553,20 @@ export default function ReportDetailPage() {
                                                                 const valueCell = row[1];
                                                                 const unitsToDisplay = new Set<string>();
 
-                                                                // Collect all units involving weight or packages
-                                                                if (valueCell?.weight > 0 || pkgData.packagesByUnit['kg']) unitsToDisplay.add('kg');
-                                                                if (valueCell?.otherUnits) Object.keys(valueCell.otherUnits).forEach(u => unitsToDisplay.add(u));
-                                                                if (pkgData.packagesByUnit) Object.keys(pkgData.packagesByUnit).forEach(u => unitsToDisplay.add(u));
+                                                                // Only show 'kg' (Total Weight). All packages are now aggregated under 'kg'.
+                                                                // We ignore 'otherUnits' entirely for the Total column.
+                                                                if (valueCell?.weight > 0 || pkgData.packagesByUnit?.['kg']) {
+                                                                    unitsToDisplay.add('kg');
+                                                                }
 
-                                                                const sortedUnits = Array.from(unitsToDisplay).sort((a, b) => {
-                                                                    if (a === 'kg') return -1;
-                                                                    if (b === 'kg') return 1;
-                                                                    return a.localeCompare(b);
-                                                                });
+                                                                const sortedUnits = Array.from(unitsToDisplay); // No sort needed, just 'kg' 
 
                                                                 return (
                                                                     <div className="flex flex-col gap-2 mt-1 px-2 pb-2">
                                                                         {sortedUnits.map(unit => {
                                                                             const isKg = unit === 'kg';
-                                                                            let quantity = 0;
-                                                                            if (isKg) quantity = valueCell?.weight || 0;
-                                                                            else quantity = valueCell?.otherUnits?.[unit] || 0;
+                                                                            // Always 'kg' now, but keeping structure if we ever reverb
+                                                                            let quantity = valueCell?.weight || 0;
 
                                                                             const packages = pkgData.packagesByUnit?.[unit] || {};
                                                                             const hasPackages = Object.keys(packages).length > 0;
@@ -1429,9 +1600,23 @@ export default function ReportDetailPage() {
                                                             const type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
 
                                                             if (count > 0) {
+                                                                const unit = meta?.unit?.toLowerCase().trim();
+                                                                const isKg = ['kg', 'кг'].includes(unit || '');
+                                                                const isG = ['g', 'г'].includes(unit || '');
+
+                                                                let weightInKg = 0;
+                                                                if (isKg) {
+                                                                    weightInKg = Number(cell) || 0;
+                                                                } else if (isG) {
+                                                                    weightInKg = (Number(cell) || 0) / 1000;
+                                                                } else {
+                                                                    // Non-weight: 1 pkg = 1 kg
+                                                                    weightInKg = count;
+                                                                }
+
                                                                 return (
-                                                                    <div className="px-2 py-0.5 text-[10px] text-zinc-500 font-medium bg-zinc-100 dark:bg-zinc-800 rounded w-fit mt-1 ml-2 mb-1">
-                                                                        {count.toFixed(1)} {type}
+                                                                    <div className="px-2 py-0.5 text-[10px] text-zinc-500 font-medium bg-zinc-100 dark:bg-zinc-800 rounded w-fit mt-1 ml-2 mb-1 border border-zinc-200/50 dark:border-zinc-700">
+                                                                        {Number(count).toFixed(1)} {type} <span className="text-blue-600 dark:text-blue-400 font-semibold ml-0.5">({weightInKg.toFixed(2)} kg)</span>
                                                                     </div>
                                                                 );
                                                             }

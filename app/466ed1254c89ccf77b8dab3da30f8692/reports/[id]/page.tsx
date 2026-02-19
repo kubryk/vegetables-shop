@@ -1517,7 +1517,7 @@ export default function ReportDetailPage() {
                                                                         value={colIdx === 1 && typeof cell !== 'object' ? cell : formatCell(cell, colIdx)}
                                                                         onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, colIdx, newVal)}
                                                                         unit={meta?.unit}
-                                                                        readOnly={header === 'Вага' || typeof cell === 'object'}
+                                                                        readOnly={true}
                                                                     />
                                                                 </div>
                                                             );

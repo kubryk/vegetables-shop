@@ -12,6 +12,13 @@ import {
     FileCheck,
     Truck
 } from "lucide-react";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../../../components/ui/tooltip";
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -25,17 +32,19 @@ function EditableCell({
     unit,
     readOnly
 }: {
-    value: string | number,
+    value: string | number | React.ReactNode,
     onUpdate: (newValue: string) => Promise<boolean>,
     unit?: string,
     readOnly?: boolean
 }) {
     const [isEditing, setIsEditing] = useState(false);
-    const [localValue, setLocalValue] = useState(value);
+    const [localValue, setLocalValue] = useState<string | number>('');
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
-        setLocalValue(value);
+        if (typeof value === 'string' || typeof value === 'number') {
+            setLocalValue(value);
+        }
     }, [value]);
 
     const handleSave = async () => {
@@ -59,7 +68,9 @@ function EditableCell({
         if (e.key === 'Enter') {
             handleSave();
         } else if (e.key === 'Escape') {
-            setLocalValue(value);
+            if (typeof value === 'string' || typeof value === 'number') {
+                setLocalValue(value);
+            }
             setIsEditing(false);
         }
     };
@@ -83,23 +94,22 @@ function EditableCell({
 
     return (
         <div
-            onClick={() => !readOnly && setIsEditing(true)}
+            onClick={() => !readOnly && typeof value !== 'object' && setIsEditing(true)}
             className={cn(
                 "p-2 min-h-[30px] rounded transition-colors truncate tabular-nums",
                 !readOnly && "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800",
                 readOnly && "bg-gray-50/50 dark:bg-zinc-800/50 text-gray-500 cursor-default",
                 (value === '' || value === null) && "text-gray-300 italic"
             )}
-            title={String(value)}
+            title={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
         >
             <div className="flex items-baseline gap-1">
                 {(value === '' || value === null) ? 'Empty' : value}
-                {unit && <span className="text-[10px] text-zinc-400 font-normal select-none">{unit}</span>}
+                {unit && (typeof value === 'string' || typeof value === 'number') && <span className="text-[10px] text-zinc-400 font-normal select-none">{unit}</span>}
             </div>
         </div>
     );
 }
-
 export default function ReportDetailPage() {
     const params = useParams();
     const id = params.id as string;
@@ -112,6 +122,7 @@ export default function ReportDetailPage() {
     // Driver Rows State
     const [driverRows, setDriverRows] = useState<any[][]>([]);
     const [driverPackageCountRows, setDriverPackageCountRows] = useState<any[][]>([]);
+    const [driverAssignments, setDriverAssignments] = useState<{ [rowIdx: number]: number }>({}); // orderRowIdx -> driverRowIdx
 
     // Column Resizing State
     const [columnWidths, setColumnWidths] = useState<{ [key: number]: number }>({});
@@ -161,6 +172,9 @@ export default function ReportDetailPage() {
             }
             if (reportData?.driverPackageCountRows) {
                 setDriverPackageCountRows(reportData.driverPackageCountRows);
+            }
+            if (reportData?.driverAssignments) {
+                setDriverAssignments(reportData.driverAssignments);
             }
         } else {
             toast.error(res.error || 'Failed to load report');
@@ -457,7 +471,6 @@ export default function ReportDetailPage() {
                 newPackageCountRows[rowIdx] = newPkgRow;
                 newData.packageCountRows = newPackageCountRows;
 
-                // Also update packageCountFooter
                 if (newData.packageCountFooter) {
                     const newPkgFooter = [...newData.packageCountFooter];
 
@@ -496,6 +509,15 @@ export default function ReportDetailPage() {
             }
         }
 
+        // 6. Recalculate Driver Rows if assignments exist
+        if (Object.keys(driverAssignments).length > 0) {
+            const { newDriverRows, newDriverPkgRows } = recalculateDriverRows(driverRows, driverAssignments, newData);
+            newData.driverRows = newDriverRows;
+            newData.driverPackageCountRows = newDriverPkgRows;
+            setDriverRows(newDriverRows);
+            setDriverPackageCountRows(newDriverPkgRows);
+        }
+
         // Optimistic update
         const previousReport = { ...report };
         setReport({ ...report, data: newData });
@@ -509,6 +531,174 @@ export default function ReportDetailPage() {
             // Revert
             setReport(previousReport);
             return false;
+        }
+    };
+
+
+
+    // Recalculate Driver Rows based on assignments
+    const recalculateDriverRows = (
+        currentDriverRows: any[][],
+        currentDriverAssignments: { [rowIdx: number]: number },
+        fullReportData: any
+    ) => {
+        // Clone driver rows to avoid direct mutation of state/props
+        // We only want to reset the Calculated Values (cols 1+), but keep the Driver Name (col 0)
+        const newDriverRows = currentDriverRows.map(row => {
+            const newRow = new Array(row.length).fill(0);
+            newRow[0] = row[0]; // Preserve name
+            return newRow;
+        });
+
+        const newDriverPkgRows = currentDriverRows.map(row => {
+            const newRow = new Array(row.length).fill(0);
+            newRow[0] = '';
+            return newRow;
+        });
+
+        // Iterate over all Main Rows (Orders)
+        fullReportData.rows.forEach((orderRow: any[], orderIdx: number) => {
+            const assignedDriverIdx = currentDriverAssignments[orderIdx];
+
+            // If this order is assigned to a valid driver
+            if (assignedDriverIdx !== undefined && newDriverRows[assignedDriverIdx]) {
+                const driverRow = newDriverRows[assignedDriverIdx];
+                const driverPkgRow = newDriverPkgRows[assignedDriverIdx];
+
+                // Iterate columns (products)
+                for (let colIdx = 2; colIdx < orderRow.length; colIdx++) {
+                    const val = Number(orderRow[colIdx]) || 0;
+
+                    if (val > 0) {
+                        // console.log(`[DriverCalc] Adding val ${val} to driver ${assignedDriverIdx} col ${colIdx}`);
+                        // Add to driver row
+                        driverRow[colIdx] += val;
+                    }
+
+                    // Add to driver package row
+                    if (fullReportData.packageCountRows?.[orderIdx]?.[colIdx]) {
+                        const pkgData = fullReportData.packageCountRows[orderIdx][colIdx];
+                        const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
+                        const type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
+
+                        if (count > 0) {
+                            if (!driverPkgRow[colIdx]) driverPkgRow[colIdx] = 0;
+
+                            // If existing is number, convert to object structure if needed, or just sum
+                            // Logic: 
+                            // 1. If we have a complex object in driver row, update it
+                            // 2. Or simplified: just sum counts and keep last type? 
+                            // Better: Store breakdown like footer? Yes, let's use breakdown for simplicity or just sum counts.
+                            // For cells (not total column), usually single type is expected per cell. 
+                            // But here multiple orders might have different types for SAME product? Unlikely but possible.
+                            // Let's stick to simple sum for now and taking the type of the last one or 'kart'.
+
+                            const currentDriverCell = driverPkgRow[colIdx];
+                            const currentCount = typeof currentDriverCell === 'object' ? currentDriverCell.count : (Number(currentDriverCell) || 0);
+
+                            let newCount = currentCount + count;
+                            let newType = type; // simplified (last wins)
+
+                            driverPkgRow[colIdx] = { count: newCount, packageType: newType };
+                        }
+                    }
+                }
+            }
+        });
+
+        // Calculate Row Totals for Drivers (Weight and Other Units)
+        newDriverRows.forEach((row, dIdx) => {
+            let totalWeight = 0;
+            const otherUnitsMap: Record<string, number> = {};
+
+            for (let i = 2; i < row.length; i++) {
+                const qty = Number(row[i]) || 0;
+                const meta = fullReportData.headerMetadata?.[i];
+                if (meta && qty > 0) {
+                    const unit = meta.unit?.toLowerCase().trim();
+                    if (['kg', 'кг'].includes(unit)) {
+                        totalWeight += qty;
+                    } else if (['g', 'г'].includes(unit)) {
+                        totalWeight += qty / 1000;
+                    } else {
+                        // For non-weight units, aggregate them by unit name
+                        // e.g. "pcs", "box", etc.
+                        const unitName = meta.unit || 'other';
+                        otherUnitsMap[unitName] = (otherUnitsMap[unitName] || 0) + qty;
+                    }
+                }
+            }
+
+            // Store comprehensive total object instead of just number
+            row[1] = { weight: totalWeight, otherUnits: otherUnitsMap };
+
+            // Pkg Total - Group by Unit
+            const pkgRow = newDriverPkgRows[dIdx];
+            const packagesByUnit: Record<string, Record<string, number>> = {};
+
+            for (let i = 2; i < pkgRow.length; i++) {
+                const cell = pkgRow[i];
+                const count = typeof cell === 'object' && cell !== null ? cell.count : (Number(cell) || 0);
+                const type = typeof cell === 'object' && cell !== null ? cell.packageType : 'kart';
+
+                if (count > 0) {
+                    const meta = fullReportData.headerMetadata?.[i];
+                    let unit = meta?.unit?.toLowerCase().trim() || 'other';
+
+                    // Normalize weight units to 'kg' for grouping
+                    if (['kg', 'кг', 'g', 'г'].includes(unit)) {
+                        unit = 'kg';
+                    }
+
+                    if (!packagesByUnit[unit]) {
+                        packagesByUnit[unit] = {};
+                    }
+                    packagesByUnit[unit][type] = (packagesByUnit[unit][type] || 0) + count;
+                }
+            }
+            pkgRow[1] = { packagesByUnit };
+        });
+
+        return { newDriverRows, newDriverPkgRows };
+    };
+
+    const handleAssignDriver = async (orderRowIdx: number, driverIdxStr: string) => {
+        if (!report || !report.data) return;
+
+        const driverIdx = parseInt(driverIdxStr);
+        let newAssignments = { ...driverAssignments };
+
+        if (isNaN(driverIdx) || driverIdx < 0) {
+            delete newAssignments[orderRowIdx];
+        } else {
+            newAssignments[orderRowIdx] = driverIdx;
+        }
+
+        setDriverAssignments(newAssignments);
+
+        // Recalculate
+        const { newDriverRows, newDriverPkgRows } = recalculateDriverRows(driverRows, newAssignments, report.data);
+
+        setDriverRows(newDriverRows);
+        setDriverPackageCountRows(newDriverPkgRows);
+
+        // Save to DB
+        const newData = {
+            ...report.data,
+            driverAssignments: newAssignments,
+            driverRows: newDriverRows,
+            driverPackageCountRows: newDriverPkgRows
+        };
+
+        // Optimistic Update
+        // setReport({ ...report, data: newData }); // already updated state individually, but report.data needs to stay in sync
+
+        const res = await updateReportData(id, newData);
+        if (res.success) {
+            setReport({ ...report, data: newData }); // Confirm sync
+            toast.success('Assignment saved');
+        } else {
+            toast.error('Failed to save assignment');
         }
     };
 
@@ -533,18 +723,30 @@ export default function ReportDetailPage() {
         setDriverPackageCountRows([...driverPackageCountRows, newDriverPkgRow]);
 
         // Save to DB
-        saveDriverRowsToDb([...driverRows, newDriverRow], [...driverPackageCountRows, newDriverPkgRow]);
+        saveDriverRowsToDb([...driverRows, newDriverRow], [...driverPackageCountRows, newDriverPkgRow], driverAssignments);
     };
 
     const handleRemoveDriver = (rowIdx: number) => {
         const newDriverRows = driverRows.filter((_, idx) => idx !== rowIdx);
         const newDriverPkgRows = driverPackageCountRows.filter((_, idx) => idx !== rowIdx);
 
+        // Update assignments: remove assignments to this driver, shift others down
+        const newAssignments: { [rowIdx: number]: number } = {};
+        Object.entries(driverAssignments).forEach(([orderIdxStr, driverIdx]) => {
+            const orderIdx = parseInt(orderIdxStr);
+            if (driverIdx < rowIdx) {
+                newAssignments[orderIdx] = driverIdx;
+            } else if (driverIdx > rowIdx) {
+                newAssignments[orderIdx] = driverIdx - 1;
+            }
+        });
+
+        setDriverAssignments(newAssignments);
         setDriverRows(newDriverRows);
         setDriverPackageCountRows(newDriverPkgRows);
 
         // Save to DB
-        saveDriverRowsToDb(newDriverRows, newDriverPkgRows);
+        saveDriverRowsToDb(newDriverRows, newDriverPkgRows, newAssignments);
         toast.success('Driver removed');
     };
 
@@ -654,13 +856,14 @@ export default function ReportDetailPage() {
         return true;
     };
 
-    const saveDriverRowsToDb = async (newDriverRows: any[][], newDriverPkgRows: any[][]) => {
+    const saveDriverRowsToDb = async (newDriverRows: any[][], newDriverPkgRows: any[][], newAssignments?: { [rowIdx: number]: number }) => {
         if (!report || !report.data) return;
 
         const newData = {
             ...report.data,
             driverRows: newDriverRows,
             driverPackageCountRows: newDriverPkgRows,
+            driverAssignments: newAssignments || driverAssignments
         };
 
         const res = await updateReportData(id, newData);
@@ -672,6 +875,18 @@ export default function ReportDetailPage() {
 
     const formatCell = (value: any, colIndex: number) => {
         if (value === null || value === undefined) return '';
+
+        // Check specifically for our custom breakdown object structure
+        if (typeof value === 'object' && value !== null && ('weight' in value || 'otherUnits' in value)) {
+            // For the Driver Row "Weight" Column (Total), we now handle the display inside the TABLE CELL renderer directly (where we have access to package data).
+            // Therefore, formatCell should return null or a simple placeholder if it's called for rendering assignment value (e.g. in EditableCell).
+            // Actually, EditableCell uses THIS for the value prop.
+            // If we want to hide the standard text rendering because we are doing custom rendering below, we can return null.
+            // BUT, EditableCell renders 'value' prop.
+            // Let's modify the TABLE structure to NOT use EditableCell for the driver summary column, or make EditableCell smarter.
+            // Better: Return nothing here, and handle FULL rendering in the cell loop.
+            return null;
+        }
 
         if (typeof value === 'number') {
             if (colIndex === 1) return `${value.toFixed(2)} kg`;
@@ -762,7 +977,7 @@ export default function ReportDetailPage() {
                         Таблиця агрегації
                     </CardTitle>
                 </CardHeader>
-                <CardContent className="p-0 overflow-auto max-h-[calc(100vh-250px)] relative">
+                <CardContent className="p-0 relative">
                     <table className="w-full text-left border-collapse text-sm table-fixed">
                         <thead className="bg-zinc-100 dark:bg-zinc-800 sticky top-0 z-30 shadow-sm">
                             <tr>
@@ -842,8 +1057,8 @@ export default function ReportDetailPage() {
                                     );
                                 })}
                                 {/* Actions Column */}
-                                <th className="px-4 py-4 font-bold text-center text-zinc-500 dark:text-zinc-400 border-b border-zinc-200/60 dark:border-zinc-700 whitespace-nowrap bg-zinc-100 dark:bg-zinc-800 sticky right-0 z-40 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)]" style={{ width: '100px', minWidth: '100px' }}>
-                                    Дії
+                                <th className="px-4 py-4 font-bold text-center text-zinc-500 dark:text-zinc-400 border-b border-zinc-200/60 dark:border-zinc-700 whitespace-nowrap bg-zinc-100 dark:bg-zinc-800 sticky right-0 z-40 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)]" style={{ width: '150px', minWidth: '150px' }}>
+                                    Водій / Дії
                                 </th>
                             </tr>
                         </thead>
@@ -929,7 +1144,7 @@ export default function ReportDetailPage() {
                                                             })()}
                                                         </div>
                                                     ) : (
-                                                        <div className="p-2 truncate flex flex-col tabular-nums" title={String(cell)}>
+                                                        <div className="p-2 truncate flex flex-col tabular-nums" title={typeof cell === 'string' || typeof cell === 'number' ? String(cell) : ''}>
                                                             <span className={cn(header === 'Вага' && "font-bold")}>
                                                                 {formatCell(cell, colIdx)}
                                                             </span>
@@ -941,38 +1156,61 @@ export default function ReportDetailPage() {
                                         })}
                                         {/* Actions Column */}
                                         {/* Actions Column */}
-                                        <td className="px-2 py-3.5 text-center border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky right-0 z-20 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)]" style={{ width: '100px', minWidth: '100px' }}>
-                                            <div className="flex items-center justify-center gap-1">
-                                                {invoiceData && (
-                                                    <Button
-                                                        size="icon"
-                                                        variant="ghost"
-                                                        className="w-8 h-8 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
-                                                        asChild
-                                                        title={`Фактура: ${invoiceData.invoiceNumber}`}
-                                                    >
-                                                        <a href={invoiceData.invoiceUrl} target="_blank" rel="noopener noreferrer">
-                                                            <FileCheck size={16} />
-                                                        </a>
-                                                    </Button>
-                                                )}
 
-                                                {!invoiceData && (
-                                                    <Button
-                                                        size="icon"
-                                                        variant="ghost"
-                                                        className="w-8 h-8 text-zinc-500 hover:text-zinc-900"
-                                                        onClick={() => handleCreateInvoice(rowIdx, false)}
-                                                        disabled={creatingInvoice[rowIdx]}
-                                                        title="Виставити фактуру"
+                                        <td className="px-2 py-3.5 text-center border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 sticky right-0 z-20 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)]" style={{ width: '150px', minWidth: '150px' }}>
+                                            <div className="flex items-center justify-between gap-2">
+                                                {/* Driver Select */}
+                                                <div className="flex-1 min-w-[80px]">
+                                                    <Select
+                                                        value={driverAssignments[rowIdx] !== undefined ? String(driverAssignments[rowIdx]) : "unassigned"}
+                                                        onValueChange={(val) => handleAssignDriver(rowIdx, val)}
                                                     >
-                                                        {creatingInvoice[rowIdx] ? (
-                                                            <Loader2 size={16} className="animate-spin" />
-                                                        ) : (
-                                                            <FileText size={16} />
-                                                        )}
-                                                    </Button>
-                                                )}
+                                                        <SelectTrigger className="h-7 text-xs px-2 py-0 border-zinc-200 bg-zinc-50/50">
+                                                            <SelectValue placeholder="No Driver" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="unassigned" className="text-zinc-400 italic">No Driver</SelectItem>
+                                                            {driverRows.map((dRow, dIdx) => (
+                                                                <SelectItem key={dIdx} value={String(dIdx)}>
+                                                                    {dRow[0]}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+
+                                                <div className="flex items-center gap-1">
+                                                    {invoiceData && (
+                                                        <Button
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            className="w-7 h-7 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                                            asChild
+                                                            title={`Фактура: ${invoiceData.invoiceNumber}`}
+                                                        >
+                                                            <a href={invoiceData.invoiceUrl} target="_blank" rel="noopener noreferrer">
+                                                                <FileCheck size={14} />
+                                                            </a>
+                                                        </Button>
+                                                    )}
+
+                                                    {!invoiceData && (
+                                                        <Button
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            className="w-7 h-7 text-zinc-400 hover:text-zinc-900"
+                                                            onClick={() => handleCreateInvoice(rowIdx, false)}
+                                                            disabled={creatingInvoice[rowIdx]}
+                                                            title="Виставити фактуру"
+                                                        >
+                                                            {creatingInvoice[rowIdx] ? (
+                                                                <Loader2 size={14} className="animate-spin" />
+                                                            ) : (
+                                                                <FileText size={14} />
+                                                            )}
+                                                        </Button>
+                                                    )}
+                                                </div>
                                             </div>
                                         </td>
                                     </tr>
@@ -1083,66 +1321,128 @@ export default function ReportDetailPage() {
                                     </td>
                                 </tr>
 
-                                {driverRows.map((row: any[], rowIdx: number) => (
-                                    <tr key={`driver-${rowIdx}`} className="hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors bg-white dark:bg-zinc-900 border-b border-blue-100/50 dark:border-blue-900/20 group/driver">
-                                        {row.map((cell: any, colIdx: number) => {
-                                            const header = reportData.headers[colIdx];
-                                            const width = getColumnWidth(colIdx);
-                                            const left = getStickyLeft(colIdx);
-                                            const meta = reportData.headerMetadata?.[colIdx];
-                                            const isEditable = true;
+                                {driverRows.map((row, rowIdx) => (
+                                    <tr key={`driver-${rowIdx}`} className="group hover:bg-zinc-50 dark:hover:bg-zinc-800/50 border-b border-zinc-100 dark:border-zinc-800 last:border-0 border-l-[3px] border-l-blue-500 bg-blue-50/10">
+                                        {/* Driver Name Cell (Editable) */}
+                                        <td className="px-0 py-0 border-r border-zinc-100 dark:border-zinc-800 sticky left-0 z-20 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800" style={{ width: '150px', minWidth: '150px' }}>
+                                            <EditableCell
+                                                value={row[0]}
+                                                onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, 0, newVal)}
+                                            />
+                                        </td>
+
+                                        {/* Data Cells */}
+                                        {row.map((cell, colIdx) => {
+                                            if (colIdx === 0) return null; // Skip name cell handled above
+
+                                            const meta = reportData.headerMetadata?.[colIdx]; // Changed from 'report' to 'reportData'
+                                            const header = meta?.name || '';
 
                                             return (
-                                                <td key={colIdx}
-                                                    style={{
-                                                        width: `${width}px`,
-                                                        minWidth: `${width}px`,
-                                                        maxWidth: `${width}px`,
-                                                        left: left !== undefined ? `${left}px` : undefined
-                                                    }}
+                                                <td
+                                                    key={`${rowIdx}-${colIdx}`}
                                                     className={cn(
-                                                        "px-2 py-3.5 text-zinc-600 dark:text-zinc-400 whitespace-nowrap border-r border-blue-50 dark:border-blue-900/20 overflow-hidden",
-                                                        colIdx < 2 && "sticky z-10 bg-white dark:bg-zinc-900 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]",
+                                                        "px-0 py-0 border-r border-zinc-100 dark:border-zinc-800 text-xs transition-colors",
                                                         header === 'Вага' && "font-medium bg-blue-50/30 dark:bg-blue-900/10 px-4 text-blue-800 dark:text-blue-200"
                                                     )}>
-                                                    <div className="flex flex-col relative group/cell">
-                                                        <div className="flex items-center">
-                                                            <EditableCell
-                                                                value={cell}
-                                                                onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, colIdx, newVal)}
-                                                                unit={meta?.unit}
-                                                                readOnly={header === 'Вага'}
-                                                            />
-                                                        </div>
+                                                    <div className="flex flex-col relative group/cell min-h-[40px] justify-center">
+                                                        {/* Main Cell Value (with logic to hide if complex object handling breakdown) */}
+                                                        {(() => {
+                                                            // For the total column (index 1), if it has complex data (packagesByUnit),
+                                                            // we might want to hide the standard value because we render it all in the breakdown below.
+                                                            // However, checking 'cell' structure here.
+                                                            // Based on previous logic, we simply render null here if it's the complex object column, 
+                                                            // and let the package breakdown handle it all.
+                                                            if (colIdx === 1 && typeof cell === 'object' && cell !== null && ('weight' in cell || 'otherUnits' in cell)) {
+                                                                return null;
+                                                            }
+
+                                                            return (
+                                                                <div className="flex items-center">
+                                                                    <EditableCell
+                                                                        value={colIdx === 1 && typeof cell !== 'object' ? cell : formatCell(cell, colIdx)}
+                                                                        onUpdate={(newVal) => handleDriverCellUpdate(rowIdx, colIdx, newVal)}
+                                                                        unit={meta?.unit}
+                                                                        readOnly={header === 'Вага' || typeof cell === 'object'}
+                                                                    />
+                                                                </div>
+                                                            );
+                                                        })()}
+
+                                                        {/* Package Breakdown or Count */}
                                                         {(() => {
                                                             const pkgData = driverPackageCountRows?.[rowIdx]?.[colIdx];
 
-                                                            // Handle Breakdown for Total Column
-                                                            if (colIdx === 1 && typeof pkgData === 'object' && pkgData?.breakdown) {
+                                                            // Special handling for Driver Total Column (Breakdown)
+                                                            if (colIdx === 1 && typeof pkgData === 'object' && pkgData?.packagesByUnit) {
+                                                                const valueCell = row[1];
+                                                                const unitsToDisplay = new Set<string>();
+
+                                                                // Collect all units involving weight or packages
+                                                                if (valueCell?.weight > 0 || pkgData.packagesByUnit['kg']) unitsToDisplay.add('kg');
+                                                                if (valueCell?.otherUnits) Object.keys(valueCell.otherUnits).forEach(u => unitsToDisplay.add(u));
+                                                                if (pkgData.packagesByUnit) Object.keys(pkgData.packagesByUnit).forEach(u => unitsToDisplay.add(u));
+
+                                                                const sortedUnits = Array.from(unitsToDisplay).sort((a, b) => {
+                                                                    if (a === 'kg') return -1;
+                                                                    if (b === 'kg') return 1;
+                                                                    return a.localeCompare(b);
+                                                                });
+
                                                                 return (
-                                                                    <div className="flex flex-col gap-0.5 mt-1">
-                                                                        {Object.entries(pkgData.breakdown).map(([type, count]) => (
-                                                                            <div key={type} className="px-2 text-[10px] text-zinc-500 font-medium bg-zinc-100 dark:bg-zinc-800 rounded w-fit">
-                                                                                {Number(count).toFixed(1)} {type}
-                                                                            </div>
-                                                                        ))}
+                                                                    <div className="flex flex-col gap-2 mt-1 px-2 pb-2">
+                                                                        {sortedUnits.map(unit => {
+                                                                            const isKg = unit === 'kg';
+                                                                            let quantity = 0;
+                                                                            if (isKg) quantity = valueCell?.weight || 0;
+                                                                            else quantity = valueCell?.otherUnits?.[unit] || 0;
+
+                                                                            const packages = pkgData.packagesByUnit?.[unit] || {};
+                                                                            const hasPackages = Object.keys(packages).length > 0;
+
+                                                                            if (quantity === 0 && !hasPackages) return null;
+
+                                                                            return (
+                                                                                <div key={unit} className="flex flex-col gap-0.5 border-l-2 border-blue-200 pl-1.5">
+                                                                                    <div className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300">
+                                                                                        {isKg ? `${quantity.toFixed(2)} kg` : `${quantity.toFixed(1)} ${unit}`}
+                                                                                    </div>
+
+                                                                                    {hasPackages && (
+                                                                                        <div className="flex flex-wrap gap-1">
+                                                                                            {Object.entries(packages).map(([type, count]) => (
+                                                                                                <div key={`${unit}-${type}`} className="px-1.5 py-0.5 text-[9px] text-zinc-500 font-medium bg-zinc-100 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
+                                                                                                    {Number(count).toFixed(1)} {type}
+                                                                                                </div>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
+                                                                        })}
                                                                     </div>
                                                                 );
                                                             }
 
+                                                            // Standard Package Rendering for other columns
                                                             const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
                                                             const type = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
 
-                                                            return count > 0 && (
-                                                                <div className="px-2 text-[10px] text-blue-500 dark:text-blue-400 font-medium">
-                                                                    [{Number(count).toFixed(1)} {type}]
-                                                                </div>
-                                                            );
+                                                            if (count > 0) {
+                                                                return (
+                                                                    <div className="px-2 py-0.5 text-[10px] text-zinc-500 font-medium bg-zinc-100 dark:bg-zinc-800 rounded w-fit mt-1 ml-2 mb-1">
+                                                                        {count.toFixed(1)} {type}
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return null;
                                                         })()}
                                                     </div>
                                                 </td>
                                             );
                                         })}
+
+                                        {/* Remove Button */}
                                         <td className="px-2 py-3 text-center border-l border-blue-100 dark:border-blue-800 bg-white dark:bg-zinc-900 sticky right-0 z-10" style={{ width: '100px', minWidth: '100px' }}>
                                             <Button
                                                 variant="ghost"
@@ -1160,15 +1460,14 @@ export default function ReportDetailPage() {
                         )}
                     </table>
                 </CardContent>
-            </Card>
+            </Card >
 
-            <div className="flex justify-end">
+            <div className="flex justify-end mt-4">
                 <Button onClick={handleAddDriver} variant="outline" className="gap-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
                     <Plus size={16} />
                     Додати водія
                 </Button>
             </div>
-
             {/* Portal-like Tooltip Rendered at Root Level to avoid Overflow Clipping */}
             {
                 hoveredHeader && (
@@ -1222,8 +1521,6 @@ export default function ReportDetailPage() {
                                 </>
                             )}
 
-
-
                             <div className="col-span-2 pt-1 mt-1 border-t border-zinc-100 dark:border-zinc-800 text-[10px] text-zinc-400">
                                 ID: {hoveredHeader.meta.id}
                             </div>
@@ -1231,9 +1528,6 @@ export default function ReportDetailPage() {
                     </div>
                 )
             }
-
-
-
         </div >
     );
 }

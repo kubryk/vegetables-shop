@@ -1042,7 +1042,7 @@ export default function ReportDetailPage() {
                         Таблиця агрегації
                     </CardTitle>
                 </CardHeader>
-                <CardContent className="p-0 relative">
+                <CardContent className="p-0 relative overflow-x-auto">
                     <table className="w-full text-left border-collapse text-sm table-fixed">
                         <thead className="bg-zinc-100 dark:bg-zinc-800 sticky top-0 z-30 shadow-sm">
                             <tr>

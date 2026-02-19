@@ -213,25 +213,7 @@ export default function ReportDetailPage() {
         }
     };
 
-    const handleCopyTable = async () => {
-        if (!report || !report.data) return;
 
-        const reportData = report.data as any;
-
-        try {
-            // Format data as TSV (Tab-Separated Values) for Excel/Sheets
-            const headers = reportData.headers.map((h: string) => h.split(' [ID:')[0]).join('\t');
-            const rows = reportData.rows.map((row: any[]) => row.join('\t')).join('\n');
-            const footer = reportData.footer.join('\t');
-
-            const tsvData = `${headers}\n${rows}\n${footer}`;
-
-            await navigator.clipboard.writeText(tsvData);
-            toast.success('Таблицю скопійовано в буфер обміну!');
-        } catch (error) {
-            toast.error('Не вдалося скопіювати таблицю');
-        }
-    };
 
     const handleDuplicateReport = async () => {
         setIsDuplicating(true);
@@ -1032,10 +1014,7 @@ export default function ReportDetailPage() {
                         </p>
                     </div>
                     <div className="flex gap-2">
-                        <Button variant="outline" onClick={handleCopyTable}>
-                            <Copy size={16} className="mr-2" />
-                            Копіювати таблицю
-                        </Button>
+
                         <Button variant="outline" onClick={handleDuplicateReport} disabled={isDuplicating}>
                             {isDuplicating ? (
                                 <>

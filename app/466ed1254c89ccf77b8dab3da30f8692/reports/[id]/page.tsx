@@ -368,6 +368,156 @@ export default function ReportDetailPage() {
         });
     }
 
+    const handleCopyAllOrders = () => {
+        if (!report || !report.data) return;
+
+        const reportData = report.data;
+
+        const getColName = (idx: number) => {
+            let let1 = Math.floor(idx / 26) - 1;
+            let let2 = idx % 26;
+            return let1 >= 0 ? String.fromCharCode(65 + let1) + String.fromCharCode(65 + let2) : String.fromCharCode(65 + let2);
+        };
+
+        const lastColName = getColName(reportData.headers.length - 1);
+
+        let html = '<table border="1">';
+
+        // 1. Headers
+        html += '<tr>';
+        const cleanHeaders = reportData.headers.map((h: string) => h.split(' [ID:')[0]);
+        for (const h of cleanHeaders) {
+            html += `<th>${h}</th>`;
+        }
+        html += '</tr>';
+
+        // 2. Rows
+        for (let rowIdx = 0; rowIdx < reportData.rows.length; rowIdx++) {
+            const row = reportData.rows[rowIdx];
+            html += '<tr>';
+
+            // Client Name
+            html += `<td>${row[0] ? String(row[0]) : ''}</td>`;
+
+            // Total Weight (Index 1)
+            const excelRow = rowIdx + 2;
+            html += `<td>=SUM(C${excelRow}:${lastColName}${excelRow})</td>`;
+
+            // Products
+            for (let i = 2; i < row.length; i++) {
+                const qty = Number(row[i]) || 0;
+                if (qty === 0) {
+                    html += `<td>0</td>`;
+                    continue;
+                }
+
+                const meta = reportData.headerMetadata?.[i];
+                const unit = meta?.unit || '';
+                const rawUnit = unit.toLowerCase().trim();
+                const isWeight = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
+
+                const pkgData = reportData.packageCountRows?.[rowIdx]?.[i];
+                const pkgCount = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
+                const pkgType = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
+
+                // Derive package type
+                let derivedPkgType = pkgType;
+                if (!derivedPkgType || derivedPkgType === 'kart') {
+                    derivedPkgType = extractPackageType(meta?.name + " " + (meta?.additionalInfo || "")) || derivedPkgType;
+                }
+                if (!derivedPkgType || derivedPkgType === 'kart') {
+                    derivedPkgType = (rawUnit !== 'шт' && rawUnit !== 'szt') ? unit || 'kart' : 'kart';
+                }
+
+                let displayVal = '';
+                let displayUnitCode = '';
+
+                if (isWeight) {
+                    const weightInKg = ['g', 'г'].includes(rawUnit) ? qty / 1000 : qty;
+                    displayVal = weightInKg.toFixed(0);
+                    displayUnitCode = 'kg';
+                } else {
+                    if (pkgCount > 0) {
+                        displayVal = Number.isInteger(pkgCount) ? pkgCount.toFixed(0) : pkgCount.toFixed(1);
+                        displayUnitCode = derivedPkgType;
+                    } else {
+                        displayVal = Number.isInteger(qty) ? qty.toFixed(0) : qty.toFixed(1);
+                        displayUnitCode = derivedPkgType;
+                    }
+                }
+
+                // Apply mso-number-format for custom Excel/Sheets formatting (leaves underlying value purely numeric)
+                html += `<td style="mso-number-format:'0 &quot;${displayUnitCode}&quot;';">${displayVal}</td>`;
+            }
+
+            html += '</tr>';
+        }
+
+        // 3. Footers
+        const lastRowExcelIdx = reportData.rows.length + 1;
+
+        // Footer 1: Value Totals
+        html += '<tr>';
+        html += '<td>TOTAL (вага)</td>';
+        html += `<td>=SUM(B2:B${lastRowExcelIdx})</td>`;
+
+        for (let i = 2; i < reportData.footer.length; i++) {
+            const colName = getColName(i);
+            const cellVal = Number(reportData.footer[i]) || 0;
+            if (cellVal === 0) {
+                html += '<td>0</td>';
+                continue;
+            }
+
+            const meta = reportData.headerMetadata?.[i];
+            const rawUnit = String(meta?.unit || '').trim().toLowerCase();
+            const isWeight = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
+
+            if (isWeight) {
+                html += `<td>=SUM(${colName}2:${colName}${lastRowExcelIdx})</td>`;
+            } else {
+                html += '<td>0</td>';
+            }
+        }
+        html += '</tr>';
+
+        // Footer 2: Package Counts Totals
+        html += '<tr>';
+        html += '<td>TOTAL (пак.)</td>';
+        // Grand total pkgs might not be directly at index 1 for typical usage, but just in case, leave blank
+        html += '<td>0</td>';
+
+        for (let i = 2; i < reportData.footer.length; i++) {
+            const colName = getColName(i);
+            const pkgData = reportData.packageCountFooter?.[i];
+            const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
+
+            if (count > 0) {
+                html += `<td>=SUM(${colName}2:${colName}${lastRowExcelIdx})</td>`;
+            } else {
+                html += '<td>0</td>';
+            }
+        }
+        html += '</tr>';
+        html += '</table>';
+
+        const blobHtml = new Blob([html], { type: 'text/html' });
+        // Fallback for simple paste (e.g. text editors)
+        const plainTextFallback = 'Таблиця замовлень (вставте у табличний редактор для кращого результату)';
+        const blobPlain = new Blob([plainTextFallback], { type: 'text/plain' });
+
+        const clipboardItem = new ClipboardItem({
+            'text/html': blobHtml,
+            'text/plain': blobPlain
+        });
+
+        navigator.clipboard.write([clipboardItem]).then(() => {
+            toast.success('Таблицю скопійовано');
+        }).catch(() => {
+            toast.error('Помилка копіювання');
+        });
+    }
+
     const handleCellUpdate = async (rowIdx: number, headerIdx: number, newValue: string) => {
         if (!report || !report.data) return false;
 
@@ -1161,11 +1311,20 @@ export default function ReportDetailPage() {
             {/* Summary Cards Removed per user request */}
 
             <Card className="border-none shadow-2xl bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden ring-1 ring-zinc-200 dark:ring-zinc-800">
-                <CardHeader className="border-b border-zinc-100 dark:border-zinc-800 py-5 bg-zinc-50/50 dark:bg-zinc-900/50">
+                <CardHeader className="border-b border-zinc-100 dark:border-zinc-800 py-5 bg-zinc-50/50 dark:bg-zinc-900/50 flex flex-row items-center justify-between">
                     <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
                         <FileBarChart2 size={16} />
                         Таблиця агрегації
                     </CardTitle>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-4 text-[10px] bg-blue-600 hover:bg-blue-500 border-none text-white uppercase font-black tracking-widest transition-all shadow-lg hover:shadow-blue-500/20 active:scale-95 m-0"
+                        onClick={handleCopyAllOrders}
+                    >
+                        <Copy size={12} className="mr-2" />
+                        Копіювати все
+                    </Button>
                 </CardHeader>
                 <CardContent className="p-0 relative overflow-x-auto">
                     <table className="w-full text-left border-collapse text-sm table-fixed">

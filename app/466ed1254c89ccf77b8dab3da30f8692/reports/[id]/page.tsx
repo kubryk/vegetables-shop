@@ -331,42 +331,111 @@ export default function ReportDetailPage() {
     };
 
     const handleCopyAllDrivers = () => {
-        const driversData: string[][] = [];
-
-        for (let i = 0; i < driverRows.length; i++) {
-            const text = getDriverVerticalText(i);
-            if (text) {
-                driversData.push(text.split('\n'));
-            }
-        }
-
-        if (driversData.length === 0) {
+        if (!report || !report.data || driverRows.length === 0) {
             toast.error('Немає даних для копіювання');
             return;
         }
 
-        // Find the maximum number of lines among all drivers to know how many rows we need
-        const maxLines = Math.max(...driversData.map(d => d.length));
-        const finalLines: string[] = [];
+        const currentReportData = report.data;
+        const rows: string[][] = [];
+        const formatNumber = (val: number) => (Number.isInteger(val) ? val.toFixed(0) : val.toFixed(1));
 
-        for (let lineIdx = 0; lineIdx < maxLines; lineIdx++) {
-            let combinedLine = '';
-            for (let driverIdx = 0; driverIdx < driversData.length; driverIdx++) {
-                // Get the line for this driver at the current index, or empty tabs if they have no more lines
-                const line = driversData[driverIdx][lineIdx] || '\t\t';
-                combinedLine += line + '\t\t'; // Add extra spacing between drivers
+        for (let rowIdx = 0; rowIdx < driverRows.length; rowIdx++) {
+            const row = driverRows[rowIdx];
+            if (!row) continue;
+
+            const driverName = String(row[0] || '').trim() || `Driver ${rowIdx + 1}`;
+            rows.push([driverName, 'Total (вага)', 'Unit', 'Total (пакування)', 'Unit']);
+
+            for (let i = 2; i < row.length; i++) {
+                const header = currentReportData.headers[i];
+                const cleanHeader = String(header || '').split(' [ID:')[0];
+                const meta = currentReportData.headerMetadata?.[i];
+                const rawUnit = String(meta?.unit || '').trim().toLowerCase();
+                const qty = Number(row[i]) || 0;
+
+                const pkgData = driverPackageCountRows?.[rowIdx]?.[i];
+                const pkgCount = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
+                let pkgType = typeof pkgData === 'object' && pkgData !== null ? (pkgData.packageType || 'kart') : 'kart';
+
+                if (!pkgType || pkgType === 'kart') {
+                    pkgType = extractPackageType(meta?.name + " " + (meta?.additionalInfo || "")) || pkgType;
+                }
+                if (!pkgType || pkgType === 'kart') {
+                    const unit = String(meta?.unit || '').trim();
+                    const lowerUnit = unit.toLowerCase();
+                    pkgType = (lowerUnit !== 'шт' && lowerUnit !== 'szt') ? (unit || 'kart') : 'kart';
+                }
+
+                let qtyValue = 0;
+                let qtyUnit = String(meta?.unit || '').trim();
+                if (['kg', 'кг'].includes(rawUnit)) {
+                    qtyValue = qty;
+                    qtyUnit = 'kg';
+                } else if (['g', 'г'].includes(rawUnit)) {
+                    qtyValue = qty / 1000;
+                    qtyUnit = 'kg';
+                } else {
+                    qtyValue = qty;
+                }
+
+                if (qtyValue <= 0 && pkgCount <= 0) continue;
+
+                rows.push([
+                    cleanHeader,
+                    formatNumber(qtyValue),
+                    qtyUnit || '',
+                    pkgCount > 0 ? formatNumber(pkgCount) : '0',
+                    pkgCount > 0 ? pkgType : ''
+                ]);
             }
-            finalLines.push(combinedLine.trimEnd());
+
+            const totalWeightData = row[1];
+            const totalWeight = typeof totalWeightData === 'object' && totalWeightData !== null
+                ? (Number(totalWeightData.weight) || 0)
+                : (Number(totalWeightData) || 0);
+            rows.push(['TOTAL', formatNumber(totalWeight), 'kg', '', '']);
+
+            if (rowIdx < driverRows.length - 1) {
+                rows.push(['', '', '', '', '']);
+            }
         }
 
-        const fullText = finalLines.join('\n');
+        if (rows.length === 0) {
+            toast.error('Немає даних для копіювання');
+            return;
+        }
 
-        navigator.clipboard.writeText(fullText).then(() => {
+        const fullText = rows.map((r) => r.join('\t')).join('\n');
+        const escapeHtml = (value: string) =>
+            value
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+
+        let html = '<table border="1">';
+        for (const row of rows) {
+            html += '<tr>';
+            for (const cell of row) {
+                html += `<td>${escapeHtml(cell)}</td>`;
+            }
+            html += '</tr>';
+        }
+        html += '</table>';
+
+        const clipboardItem = new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([fullText], { type: 'text/plain' })
+        });
+
+        navigator.clipboard.write([clipboardItem]).then(() => {
             toast.success('Дані всіх водіїв скопійовано горизонтально!');
         }).catch(() => {
             toast.error('Помилка копіювання');
         });
-    }
+    };
 
     const handleCopyAllOrders = () => {
         if (!report || !report.data) return;
@@ -484,16 +553,28 @@ export default function ReportDetailPage() {
         // Footer 2: Package Counts Totals
         html += '<tr>';
         html += '<td>TOTAL (пак.)</td>';
-        // Grand total pkgs might not be directly at index 1 for typical usage, but just in case, leave blank
-        html += '<td>0</td>';
+        // Grand total packages is intentionally left empty for copied sheet
+        html += '<td></td>';
 
         for (let i = 2; i < reportData.footer.length; i++) {
-            const colName = getColName(i);
             const pkgData = reportData.packageCountFooter?.[i];
             const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
+            const meta = reportData.headerMetadata?.[i];
+            const rawUnit = String(meta?.unit || '').trim().toLowerCase();
+            let packageType = typeof pkgData === 'object' && pkgData !== null ? (pkgData.packageType || '') : '';
+
+            if (!packageType || packageType === 'kart') {
+                packageType = extractPackageType(meta?.name + " " + (meta?.additionalInfo || "")) || packageType;
+            }
+            if (!packageType || packageType === 'kart') {
+                packageType = (rawUnit !== 'шт' && rawUnit !== 'szt') ? (meta?.unit || 'kart') : 'kart';
+            }
 
             if (count > 0) {
-                html += `<td>=SUM(${colName}2:${colName}${lastRowExcelIdx})</td>`;
+                const formattedCount = Number.isInteger(count) ? count.toFixed(0) : count.toFixed(1);
+                const msoFormat = Number.isInteger(count) ? '0' : '0.0';
+                const safePackageType = String(packageType || 'kart').replace(/["']/g, '');
+                html += `<td style="mso-number-format:'${msoFormat} &quot;${safePackageType}&quot;';">${formattedCount}</td>`;
             } else {
                 html += '<td>0</td>';
             }
@@ -1326,7 +1407,7 @@ export default function ReportDetailPage() {
                         Копіювати все
                     </Button>
                 </CardHeader>
-                <CardContent className="p-0 relative overflow-x-auto">
+                <CardContent className="p-0 relative overflow-auto max-h-[75vh]">
                     <table className="w-full text-left border-collapse text-sm table-fixed">
                         <thead className="bg-zinc-100 dark:bg-zinc-800 sticky top-0 z-30 shadow-sm">
                             <tr>
@@ -1442,8 +1523,8 @@ export default function ReportDetailPage() {
                                                         "px-2 py-3.5 text-zinc-700 dark:text-zinc-300 whitespace-nowrap border-r border-zinc-100 dark:border-zinc-800/50 overflow-hidden",
                                                         colIdx < 2 && "sticky z-20 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]",
                                                         colIdx < 2 && (dColor ? dColor.bg : "bg-white dark:bg-zinc-900"),
-                                                        (header === 'Вага' || header.toLowerCase().includes('total') || header.toLowerCase().includes('сума')) && (dColor ? "text-center text-blue-600 dark:text-blue-400" : "font-medium bg-blue-50/30 dark:bg-blue-900/10 px-4 text-blue-600 dark:text-blue-400 text-center"),
-                                                        (header === 'Вага' || header.toLowerCase().includes('total') || header.toLowerCase().includes('сума')) && dColor && "font-bold px-4 text-center text-blue-600 dark:text-blue-400"
+                                                        (header === 'Вага' || header.toLowerCase().includes('total') || header.toLowerCase().includes('сума')) && (dColor ? "bg-blue-50 dark:bg-blue-900 text-center text-blue-600 dark:text-blue-400" : "font-medium bg-blue-50 dark:bg-blue-900 px-4 text-blue-600 dark:text-blue-400 text-center"),
+                                                        (header === 'Вага' || header.toLowerCase().includes('total') || header.toLowerCase().includes('сума')) && dColor && "font-bold px-4 bg-blue-50 dark:bg-blue-900 text-center text-blue-600 dark:text-blue-400"
                                                     )}>
                                                     {isEditable ? (
                                                         <div className="flex flex-col relative group/cell">
@@ -1798,8 +1879,8 @@ export default function ReportDetailPage() {
                                                         className={cn(
                                                             "px-0 py-0 border-r border-zinc-100 dark:border-zinc-800 text-xs transition-colors overflow-hidden",
                                                             colIdx === 1 && "sticky z-20 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.1)] clip-right",
-                                                            colIdx === 1 && (dColor ? dColor.bg + " text-center text-blue-600 dark:text-blue-400" : "bg-blue-50/10 dark:bg-blue-900/10 text-center text-blue-600 dark:text-blue-400"),
-                                                            (header === 'Вага' || header.toLowerCase().includes('total') || header.toLowerCase().includes('сума')) && (dColor ? "text-center text-blue-600 dark:text-blue-400" : "font-medium bg-blue-50/30 dark:bg-blue-900/10 px-4 text-blue-600 dark:text-blue-400 text-center")
+                                                            colIdx === 1 && (dColor ? "bg-blue-50 dark:bg-blue-900 text-center text-blue-600 dark:text-blue-400" : "bg-blue-50 dark:bg-blue-900 text-center text-blue-600 dark:text-blue-400"),
+                                                            (header === 'Вага' || header.toLowerCase().includes('total') || header.toLowerCase().includes('сума')) && (dColor ? "bg-blue-50 dark:bg-blue-900 text-center text-blue-600 dark:text-blue-400" : "font-medium bg-blue-50 dark:bg-blue-900 px-4 text-blue-600 dark:text-blue-400 text-center")
                                                         )}>
                                                         <div className={cn("flex flex-col relative group/cell min-h-[40px] justify-center", colIdx === 1 && "items-center")}>
                                                             {(() => {

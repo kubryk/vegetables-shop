@@ -109,6 +109,17 @@ export async function getFakturowniaProducts(): Promise<Product[]> {
 
             const data: FakturowniaProduct[] = await res.json();
 
+            const withTag = data.filter(p => p.tag_list?.includes('website'));
+            const debugProduct = data.find(p => String(p.id) === '17322543662');
+            if (debugProduct) {
+                console.log(`[Fakturownia] DEBUG product 17322543662:`, JSON.stringify(debugProduct, null, 2));
+            }
+
+            console.log(`[Fakturownia] Page ${page}: ${data.length} total, ${withTag.length} with 'website' tag`);
+            withTag.forEach(p => {
+                console.log(`  - [${p.id}] ${p.name} | unit: ${p.quantity_unit} | disabled: ${p.disabled}`);
+            });
+
             if (!Array.isArray(data) || data.length === 0) {
                 break; // No more data
             }
@@ -137,6 +148,7 @@ export async function getFakturowniaProducts(): Promise<Product[]> {
         }
 
         // Sort by position DESC (Higher value = Higher priority/First in list)
+        console.log(`[Fakturownia] Total products with 'website' tag: ${allProducts.length}`);
         return allProducts.sort((a, b) => (b.position || 0) - (a.position || 0));
     } catch (error) {
         console.error('Error fetching Fakturownia products:', error);

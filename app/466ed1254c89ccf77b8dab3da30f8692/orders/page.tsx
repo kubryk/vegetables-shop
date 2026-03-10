@@ -21,6 +21,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { getPackageCount } from '@/lib/weights';
 
 export default function OrdersPage() {
     const [orders, setOrders] = useState<any[]>([]);
@@ -534,17 +535,7 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                     </div>
                     {(() => {
                         const totalPackages = items.reduce((sum: number, item: any) => {
-                            // New cleaner logic: Check for explicit packageCount
-                            if (item.packageCount) return sum + item.packageCount;
-
-                            // Fallback 1: Try to parse number from additionalInfo (old orders compatibility)
-                            const countFromInfo = parseInt(item.additionalInfo);
-                            if (!isNaN(countFromInfo)) return sum + countFromInfo;
-
-                            // Fallback 2: Calculate from weight (really old orders)
-                            const inPack = Number(item.netWeight || item.unitPerCardboard || 1);
-                            const count = inPack > 1 ? Math.round((Number(item.quantity) || 0) / inPack) : (Number(item.quantity) || 0);
-                            return sum + count;
+                            return sum + (getPackageCount(item) || 0);
                         }, 0);
                         return (
                             <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
@@ -576,21 +567,7 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                                 const pricePerUnit = Number(item.price || item.pricePerUnit || 0); // fallback to pricePerUnit for old orders
                                 const totalPrice = Number(item.totalPrice || (pricePerUnit * quantity));
 
-                                // Calculate packages count
-                                // Calculate packages count
-                                let packagesCount = item.packageCount;
-
-                                if (!packagesCount) {
-                                    // Fallback: Try to get number from additionalInfo (e.g. "3 wor")
-                                    const parsed = parseInt(item.additionalInfo);
-                                    if (!isNaN(parsed)) {
-                                        packagesCount = parsed;
-                                    } else {
-                                        // Final fallback: Calculate from weight
-                                        const inPack = Number(item.netWeight || item.unitPerCardboard || 1);
-                                        packagesCount = inPack > 1 ? Math.round(quantity / inPack) : quantity;
-                                    }
-                                }
+                                const packagesCount = getPackageCount(item);
 
                                 return (
                                     <tr key={idx} className="hover:bg-zinc-50/30 dark:hover:bg-zinc-800/20">
@@ -638,20 +615,7 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                         const pricePerUnit = Number(item.price || item.pricePerUnit || 0);
                         const totalPrice = Number(item.totalPrice || (pricePerUnit * quantity));
 
-                        // Calculate packages count
-                        let packagesCount = item.packageCount;
-
-                        if (!packagesCount) {
-                            // Fallback: Try to get number from additionalInfo (e.g. "3 wor")
-                            const parsed = parseInt(item.additionalInfo);
-                            if (!isNaN(parsed)) {
-                                packagesCount = parsed;
-                            } else {
-                                // Final fallback: Calculate from weight
-                                const inPack = Number(item.netWeight || item.unitPerCardboard || 1);
-                                packagesCount = inPack > 1 ? Math.round(quantity / inPack) : quantity;
-                            }
-                        }
+                        const packagesCount = getPackageCount(item);
 
                         return (
                             <div key={idx} className="flex gap-3 bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">

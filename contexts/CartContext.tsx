@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { CartItem } from '@/types/order';
 import { Product } from '@/types/product';
+import { getPackageCount } from '@/lib/weights';
 
 type CartContextType = {
   items: CartItem[];
@@ -49,8 +50,19 @@ const loadCartFromStorage = (): CartItem[] => {
               : '',
             category: String(raw.category || 'Інше'),
             unit: String(raw.unit || 'kg'),
+            unitsPerPackage: Number(raw.unitsPerPackage || raw.unitPerCardboard || 0),
+            weightMode: raw.weightMode,
+            weightPerUnitKg: Number(raw.weightPerUnitKg || 0) || undefined,
+            weightPerPackageKg: Number(raw.weightPerPackageKg || raw.netWeight || (raw as any).cardboardWeight || 0) || undefined,
+            calculatedWeightKg: Number(raw.calculatedWeightKg || 0) || undefined,
+            manualWeightKg: Number(raw.manualWeightKg || 0) || undefined,
+            weightSource: raw.weightSource,
             netWeight: Number(raw.netWeight || (raw as any).cardboardWeight || 0),
             unitPerCardboard: Number(raw.unitPerCardboard || 0),
+            additionalInfo: typeof raw.additionalInfo === 'string' ? raw.additionalInfo : undefined,
+            baseAdditionalInfo: typeof raw.baseAdditionalInfo === 'string' ? raw.baseAdditionalInfo : undefined,
+            packageCount: raw.packageCount !== undefined ? Number(raw.packageCount || 0) : undefined,
+            packageType: typeof raw.packageType === 'string' ? raw.packageType : undefined,
           } satisfies CartItem;
         })
         .filter((x) => x.productId && x.quantity > 0);
@@ -69,6 +81,26 @@ const saveCartToStorage = (items: CartItem[]) => {
   } catch (error) {
     console.error('Failed to save cart to localStorage:', error);
   }
+};
+
+const getDisplayItemCount = (item: CartItem) => {
+  const packageCount = getPackageCount(item);
+  if (packageCount > 0) {
+    const baseInfo = item.baseAdditionalInfo || item.additionalInfo;
+    const match = baseInfo?.match(/^\s*(\d+(?:\.\d+)?)\s+/);
+
+    if (match) {
+      const baseCount = parseFloat(match[1]) || 1;
+      const bundleCount = packageCount / baseCount;
+      if (Number.isFinite(bundleCount) && bundleCount > 0) {
+        return bundleCount;
+      }
+    }
+
+    return packageCount;
+  }
+
+  return item.quantity;
 };
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -108,6 +140,10 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
               image: product.image || item.image || '',
               category: product.category || item.category || 'Інше',
               unit: product.unit || item.unit,
+              unitsPerPackage: product.unitsPerPackage || product.unitPerCardboard || item.unitsPerPackage || item.unitPerCardboard,
+              weightMode: product.weightMode || item.weightMode,
+              weightPerUnitKg: product.weightPerUnitKg || item.weightPerUnitKg,
+              weightPerPackageKg: product.weightPerPackageKg || product.netWeight || item.weightPerPackageKg,
               netWeight: product.netWeight || item.netWeight,
               unitPerCardboard: product.unitPerCardboard || item.unitPerCardboard,
               price: product.pricePerUnit || item.price,
@@ -131,6 +167,10 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
           currency: (product.currency || DEFAULT_CURRENCY).toUpperCase(),
           image: product.image || '',
           unit: product.unit || 'kg',
+          unitsPerPackage: product.unitsPerPackage || product.unitPerCardboard || 0,
+          weightMode: product.weightMode,
+          weightPerUnitKg: product.weightPerUnitKg,
+          weightPerPackageKg: product.weightPerPackageKg || product.netWeight,
           netWeight: product.netWeight || 0,
           unitPerCardboard: product.unitPerCardboard || 0,
           additionalInfo: additionalInfo || product.additionalInfo,
@@ -157,6 +197,11 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         item.productId === productId ? {
           ...item,
           quantity,
+          unitsPerPackage: item.unitsPerPackage,
+          weightMode: item.weightMode,
+          weightPerUnitKg: item.weightPerUnitKg,
+          weightPerPackageKg: item.weightPerPackageKg,
+          manualWeightKg: item.manualWeightKg,
           additionalInfo: additionalInfo || item.additionalInfo,
           baseAdditionalInfo: baseAdditionalInfo || item.baseAdditionalInfo,
           packageCount: packageCount !== undefined ? packageCount : item.packageCount,
@@ -178,8 +223,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
   const getTotalItems = useCallback(() => {
     return items.reduce((total, item) => {
-      const inPack = item.netWeight || item.unitPerCardboard || 1;
-      return total + Math.round(item.quantity / inPack);
+      return total + getDisplayItemCount(item);
     }, 0);
   }, [items]);
 

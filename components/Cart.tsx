@@ -15,6 +15,46 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Card, CardContent } from '@/components/ui/card';
 import { Minus, Plus, Trash2, ShoppingCart, CheckCircle2, AlertCircle } from 'lucide-react';
+import { getPackageCount, getUnitsPerPackage, getWeightPerPackageKg, isWeightUnit } from '@/lib/weights';
+
+function formatCartItemLabel(item: {
+  quantity: number;
+  unit: string;
+  additionalInfo?: string;
+  baseAdditionalInfo?: string;
+  packageCount?: number;
+  packageType?: string;
+}) {
+  const isInvoiceWeight = isWeightUnit(item.unit);
+  const packageCount = Number(item.packageCount || 0);
+  const baseInfo = item.baseAdditionalInfo || item.additionalInfo;
+
+  if (!isInvoiceWeight && baseInfo) {
+    const match = baseInfo.match(/^\s*(\d+(?:\.\d+)?)\s*(.*)$/);
+    if (match && packageCount > 0) {
+      const baseCount = parseFloat(match[1]) || 1;
+      const packageLabel = match[2].trim();
+      const bundleCount = packageCount / baseCount;
+      const formattedBundles = Number.isInteger(bundleCount)
+        ? bundleCount.toFixed(0)
+        : bundleCount.toFixed(1);
+      const formattedBaseCount = Number.isInteger(baseCount)
+        ? baseCount.toFixed(0)
+        : baseCount.toFixed(1);
+
+      return packageLabel
+        ? `${formattedBundles} x ${formattedBaseCount} ${packageLabel}`
+        : formattedBundles;
+    }
+  }
+
+  if (!isInvoiceWeight && packageCount > 0 && item.additionalInfo) {
+    return item.additionalInfo;
+  }
+
+  const precision = isInvoiceWeight ? 2 : 0;
+  return `${item.quantity.toFixed(precision)} ${item.unit}`;
+}
 
 const Cart = () => {
   const {
@@ -57,11 +97,13 @@ const Cart = () => {
     const item = items.find(i => i.productId === productId);
     if (!item) return;
 
-    const inPack = item.netWeight || item.unitPerCardboard || 1;
-    const currentPackages = Math.round(item.quantity / inPack);
+    const packageSize = isWeightUnit(item.unit)
+      ? (getWeightPerPackageKg(item) || 1)
+      : (getUnitsPerPackage(item) || 1);
+    const currentPackages = Math.round(item.quantity / packageSize);
     const newPackages = isIncrement ? currentPackages + 1 : Math.max(0, currentPackages - 1);
 
-    const newQuantity = newPackages * inPack;
+    const newQuantity = newPackages * packageSize;
 
     // Update additionalInfo and packageCount
     let newAdditionalInfo = item.additionalInfo;
@@ -124,16 +166,11 @@ const Cart = () => {
         customerPhone: '',
         customerEmail: formData.customerEmail.trim(),
         customerAddress: undefined,
-        items: currentItems.map(({ baseAdditionalInfo, ...item }) => {
-          const rawUnit = String(item.unit || '').trim().toLowerCase();
-          const isWeightUnit = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
-          return {
-            ...item,
-            netWeight: isWeightUnit ? item.netWeight : 0,
-            price: item.price,
-            totalPrice: item.price * item.quantity
-          };
-        }),
+        items: currentItems.map((item) => ({
+          ...item,
+          price: item.price,
+          totalPrice: item.price * item.quantity
+        })),
         totalPrice: currentTotal,
         currency,
         orderDate: new Date().toISOString(),
@@ -222,7 +259,7 @@ const Cart = () => {
                     {lastOrder.items.map((item, idx) => (
                       <li key={idx} className="flex justify-between">
                         <span className="text-gray-900 dark:text-gray-200 truncate pr-2 flex-1">
-                          {item.name} <span className="text-gray-400 whitespace-nowrap">({item.quantity} {item.unit}){item.additionalInfo ? ` [${item.additionalInfo}]` : ''}</span>
+                          {item.name} <span className="text-gray-400 whitespace-nowrap">({formatCartItemLabel(item)})</span>
                         </span>
                         <span className="font-semibold whitespace-nowrap">{new Intl.NumberFormat('de-DE', { style: 'currency', currency: lastOrder.currency }).format(item.price * item.quantity)}</span>
                       </li>
@@ -321,8 +358,7 @@ const Cart = () => {
                               </div>
                               <div className="mt-1 flex flex-col gap-0.5">
                                 <p className="text-sm font-bold text-[hsl(142_76%_36%)] dark:text-green-400">
-                                  {item.quantity.toFixed(['kg', 'кг', 'g', 'г'].includes(item.unit.toLowerCase()) ? 2 : 0)} {item.unit}
-                                  {item.additionalInfo && <span className="ml-2 text-xs text-gray-500">({item.additionalInfo})</span>}
+                                  {formatCartItemLabel(item)}
                                 </p>
                                 <p className="text-xs font-medium text-gray-500 dark:text-zinc-400">
                                   {formattedPrice.format(item.price)} / {item.unit}
@@ -338,19 +374,19 @@ const Cart = () => {
                                   size="icon"
                                   className="h-8 w-8 rounded-md bg-white shadow-sm hover:bg-[hsl(142_76%_36%)] hover:text-white disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-[hsl(142_76%_36%)] dark:hover:text-white"
                                   onClick={() => handleQuantityChange(item.productId, false)}
-                                  disabled={Math.round(item.quantity / (item.netWeight || item.unitPerCardboard || 1)) <= 1}
+                                  disabled={Math.round(item.quantity / (isWeightUnit(item.unit) ? (getWeightPerPackageKg(item) || 1) : (getUnitsPerPackage(item) || 1))) <= 1}
                                 >
                                   <Minus className="h-3 w-3" />
                                 </Button>
                                 <span className="w-8 text-center text-sm font-bold text-gray-900 dark:text-zinc-100">
-                                  {Math.round(item.quantity / (item.netWeight || item.unitPerCardboard || 1))}
+                                  {Math.round(item.quantity / (isWeightUnit(item.unit) ? (getWeightPerPackageKg(item) || 1) : (getUnitsPerPackage(item) || 1)))}
                                 </span>
                                 <Button
                                   variant="ghost"
                                   size="icon"
                                   className="h-8 w-8 rounded-md bg-white shadow-sm hover:bg-[hsl(142_76%_36%)] hover:text-white disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-[hsl(142_76%_36%)] dark:hover:text-white"
                                   onClick={() => handleQuantityChange(item.productId, true)}
-                                  disabled={Math.round(item.quantity / (item.netWeight || item.unitPerCardboard || 1)) >= 99}
+                                  disabled={Math.round(item.quantity / (isWeightUnit(item.unit) ? (getWeightPerPackageKg(item) || 1) : (getUnitsPerPackage(item) || 1))) >= 99}
                                 >
                                   <Plus className="h-3 w-3" />
                                 </Button>

@@ -1,10 +1,12 @@
 'use server';
 
 import { db } from '@/lib/db';
-import { orders, productMetadata } from '@/lib/db/schema';
+import { orders } from '@/lib/db/schema';
 import { eq, desc, and, gte, lte, count, ilike, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { getFakturowniaProducts } from '@/lib/fakturownia';
+import { getProductMetadataById, getProductMetadataRows, upsertProductMetadata as saveProductMetadata } from '@/lib/product-metadata';
+import { calculateItemWeight, getPackageCount, isWeightUnit } from '@/lib/weights';
 
 import { headers } from 'next/headers';
 
@@ -21,6 +23,20 @@ async function verifyAuth() {
     if (user !== process.env.DASHBOARD_USER || pwd !== process.env.DASHBOARD_PASSWORD) {
         throw new Error('Unauthorized');
     }
+}
+
+function getSheetNumberPatternForUnit(unit?: string | null) {
+    const normalizedUnit = String(unit || '').trim();
+    if (!normalizedUnit) {
+        return '0';
+    }
+
+    const safeUnit = normalizedUnit.replace(/["']/g, '');
+    if (isWeightUnit(normalizedUnit)) {
+        return `0.00 "${safeUnit}"`;
+    }
+
+    return `0 "${safeUnit}"`;
 }
 
 export async function getProducts() {
@@ -264,7 +280,7 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
         const allProducts = await getFakturowniaProducts();
 
         // Load local product metadata for fallback
-        const metadata = await db.select().from(productMetadata);
+        const metadata = await getProductMetadataRows();
         const metadataMap = new Map<string, typeof metadata[0]>();
         metadata.forEach(m => metadataMap.set(m.id, m));
 
@@ -295,15 +311,33 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
                 if (key && !headerKeys.has(complexKey)) {
                     const meta = metadataMap.get(productId);
 
+                    productLookup.set(productId, {
+                        id: productId,
+                        name: key,
+                        unit: item.unit,
+                        agregationResult: 'weight',
+                        netWeight: Number(item.netWeight) || Number(item.weightPerPackageKg) || 0,
+                        unitPerCardboard: Number(item.unitPerCardboard) || Number(item.unitsPerPackage) || 0,
+                        weightMode: item.weightMode || undefined,
+                        weightPerUnitKg: Number(item.weightPerUnitKg) || 0,
+                        weightPerPackageKg: Number(item.weightPerPackageKg) || Number(item.netWeight) || 0,
+                        unitsPerPackage: Number(item.unitsPerPackage) || Number(item.unitPerCardboard) || 0,
+                        position: meta?.position ?? 0,
+                        additionalInfo: item.additionalInfo
+                    });
+
                     // We need to set the lookup for the COMPLEX key
                     productLookup.set(complexKey, {
                         id: productId,
                         name: key,
-                        // Force weight
+                        unit: item.unit,
                         agregationResult: 'weight',
-                        netWeight: Number(item.netWeight) || 0,
-                        unitPerCardboard: Number(item.unitPerCardboard) || 0,
-                        // Use position from metadata if available to keep sorting consistent
+                        netWeight: Number(item.netWeight) || Number(item.weightPerPackageKg) || 0,
+                        unitPerCardboard: Number(item.unitPerCardboard) || Number(item.unitsPerPackage) || 0,
+                        weightMode: item.weightMode || undefined,
+                        weightPerUnitKg: Number(item.weightPerUnitKg) || 0,
+                        weightPerPackageKg: Number(item.weightPerPackageKg) || Number(item.netWeight) || 0,
+                        unitsPerPackage: Number(item.unitsPerPackage) || Number(item.unitPerCardboard) || 0,
                         position: meta?.position ?? 0,
                         additionalInfo: item.additionalInfo
                     });
@@ -340,8 +374,7 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
         const headerRow = ['Клієнт', 'Вага', ...sortedKeys.map(k => {
             const p = productLookup.get(k);
             const unit = p?.unit || 'kg';
-            const isWeight = unit === 'kg' || unit === 'g' || unit === 'кг' || (p?.netWeight && p.netWeight > 0);
-            return `${k} (${isWeight ? 'кг' : 'шт'})`;
+            return `${k} (${unit})`;
         })];
 
         // Prepare Rows
@@ -380,36 +413,7 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
                 if (primaryKey) {
                     const product = productLookup.get(primaryKey);
                     const qty = Number(item.quantity) || 0;
-                    // STRENGTHENED UNIT CHECK LOGIC
-                    const rawUnit = String(item.unit || product?.unit || '').trim().toLowerCase();
-                    const isWeightUnit = rawUnit === 'kg' || rawUnit === 'g' || rawUnit === 'кг' || rawUnit === 'г';
-
-                    let valueToAdd = 0;
-
-                    if (isWeightUnit) {
-                        // IT IS WEIGHT: use quantity directly
-                        valueToAdd = qty;
-                    } else {
-                        // IT IS PIECES: use package count * weight per package
-                        // Weight = Packages * WeightPerPackage
-                        let pkgCount = item.packageCount;
-
-                        if (!pkgCount) {
-                            // Fallback 1: Try parse additionalInfo
-                            const parsed = parseInt(item.additionalInfo);
-                            if (!isNaN(parsed)) {
-                                pkgCount = parsed;
-                            } else {
-                                // Fallback 2: Calculate from units per cardboard
-                                const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
-                                pkgCount = inPack > 0 ? (qty / inPack) : 0;
-                            }
-                        }
-
-                        // Determine weight per package
-                        const weightPerPack = Number(item.netWeight || product?.netWeight || 0);
-                        valueToAdd = (pkgCount || 0) * weightPerPack;
-                    }
+                    const valueToAdd = qty;
 
                     const current = orderWeights.get(primaryKey) || 0;
                     orderWeights.set(primaryKey, current + valueToAdd);
@@ -424,7 +428,7 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
                 // Find product for fallback
                 let product = null;
                 // Try to find by ID
-                if (item.productId) product = productLookup.get(Number(item.productId));
+                if (item.productId) product = productLookup.get(String(item.productId));
                 else {
                     // Startswith lookup (less reliable but fallback)
                     for (const k of sortedKeys) {
@@ -435,30 +439,21 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
                     }
                 }
 
-                // STRENGTHENED UNIT CHECK LOGIC FOR TOTAL ROW
-                const rawUnit = String(item.unit || product?.unit || '').trim().toLowerCase();
-                const isWeightUnit = rawUnit === 'kg' || rawUnit === 'g' || rawUnit === 'кг' || rawUnit === 'г';
+                const { calculatedWeightKg } = calculateItemWeight(
+                    {
+                        ...item,
+                        quantity: qty,
+                        unitsPerPackage: Number(item.unitsPerPackage) || undefined,
+                        weightMode: item.weightMode,
+                        weightPerUnitKg: Number(item.weightPerUnitKg) || undefined,
+                        weightPerPackageKg: Number(item.weightPerPackageKg) || undefined,
+                        packageCount: getPackageCount(item, product) || undefined,
+                    },
+                    product,
+                    { preferCurrentProduct: true }
+                );
 
-                let weight = 0;
-
-                if (isWeightUnit) {
-                    weight = qty;
-                } else {
-                    // Pieces -> Weight
-                    let pkgCount = item.packageCount;
-                    if (!pkgCount) {
-                        const parsed = parseInt(item.additionalInfo);
-                        if (!isNaN(parsed)) pkgCount = parsed;
-                        else {
-                            const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
-                            pkgCount = inPack > 0 ? (qty / inPack) : 0;
-                        }
-                    }
-                    const weightPerPack = Number(item.netWeight || product?.netWeight || 0);
-                    weight = (pkgCount || 0) * weightPerPack;
-                }
-
-                rowTotalWeight += weight;
+                rowTotalWeight += Number(calculatedWeightKg || 0);
             }
 
             const row: any[] = [
@@ -546,9 +541,7 @@ export async function exportAggregationToSheets(startDate: string, endDate: stri
 
                 const p = productLookup.get(key);
                 const unit = p?.unit || 'kg';
-                const isWeight = unit === 'kg' || unit === 'g' || unit === 'кг' || (p?.netWeight && p.netWeight > 0);
-
-                const pattern = isWeight ? '0.00 "kg"' : '0 "шт"';
+                const pattern = getSheetNumberPatternForUnit(unit);
 
                 requests.push({
                     repeatCell: {
@@ -697,23 +690,17 @@ function extractPackageType(text: string | undefined): string | null {
     return null;
 }
 
-export async function updateProductMetadata(id: string, data: { image?: string; agregationResult?: string; position?: number }) {
+export async function updateProductMetadata(
+    id: string,
+    data: {
+        image?: string;
+        agregationResult?: string;
+        position?: number;
+    }
+) {
     await verifyAuth();
     try {
-        await db.insert(productMetadata)
-            .values({
-                id,
-                ...data,
-                updatedAt: new Date()
-            })
-            .onConflictDoUpdate({
-                target: productMetadata.id,
-                set: {
-                    ...data,
-                    updatedAt: new Date()
-                }
-            });
-
+        await saveProductMetadata(id, data);
         revalidatePath('/');
         return { success: true };
     } catch (error) {
@@ -746,7 +733,7 @@ export async function getAggregationData(startDate: string, endDate: string) {
         const allProducts = await getFakturowniaProducts();
 
         // Load local product metadata for fallback
-        const metadata = await db.select().from(productMetadata);
+        const metadata = await getProductMetadataRows();
         const metadataMap = new Map<string, typeof metadata[0]>();
         metadata.forEach(m => metadataMap.set(m.id, m));
 
@@ -776,13 +763,32 @@ export async function getAggregationData(startDate: string, endDate: string) {
                 if (key && !headerKeys.has(complexKey)) {
                     const meta = metadataMap.get(productId);
 
+                    productLookup.set(productId, {
+                        id: productId,
+                        name: key,
+                        unit: item.unit,
+                        agregationResult: 'weight',
+                        netWeight: Number(item.netWeight) || Number(item.weightPerPackageKg) || 0,
+                        unitPerCardboard: Number(item.unitPerCardboard) || Number(item.unitsPerPackage) || 0,
+                        weightMode: item.weightMode || undefined,
+                        weightPerUnitKg: Number(item.weightPerUnitKg) || 0,
+                        weightPerPackageKg: Number(item.weightPerPackageKg) || Number(item.netWeight) || 0,
+                        unitsPerPackage: Number(item.unitsPerPackage) || Number(item.unitPerCardboard) || 0,
+                        position: meta?.position ?? 0,
+                        additionalInfo: item.additionalInfo
+                    });
+
                     productLookup.set(complexKey, {
                         id: productId,
                         name: key,
                         unit: item.unit,
-                        agregationResult: 'weight', // Force weight
-                        netWeight: Number(item.netWeight) || 0,
-                        unitPerCardboard: Number(item.unitPerCardboard) || 0,
+                        agregationResult: 'weight',
+                        netWeight: Number(item.netWeight) || Number(item.weightPerPackageKg) || 0,
+                        unitPerCardboard: Number(item.unitPerCardboard) || Number(item.unitsPerPackage) || 0,
+                        weightMode: item.weightMode || undefined,
+                        weightPerUnitKg: Number(item.weightPerUnitKg) || 0,
+                        weightPerPackageKg: Number(item.weightPerPackageKg) || Number(item.netWeight) || 0,
+                        unitsPerPackage: Number(item.unitsPerPackage) || Number(item.unitPerCardboard) || 0,
                         position: meta?.position ?? 0,
                         additionalInfo: item.additionalInfo
                     });
@@ -826,9 +832,6 @@ export async function getAggregationData(startDate: string, endDate: string) {
         const headerRow = ['Клієнт', 'Вага', ...sortedKeys.map(k => {
             const p = productLookup.get(k);
             const unit = p?.unit || 'kg';
-            const rawUnit = String(unit).trim().toLowerCase();
-            const isService = ['godz', 'h', 'min', 'm', 'usł', 'srv', 'km'].includes(rawUnit);
-            const isWeight = !isService && (rawUnit === 'kg' || rawUnit === 'g' || rawUnit === 'кг' || (p?.netWeight && p.netWeight > 0));
             return `${k} (${unit})`;
         })];
 
@@ -841,6 +844,10 @@ export async function getAggregationData(startDate: string, endDate: string) {
                 unit: p.unit,
                 netWeight: p.netWeight,
                 unitPerCardboard: p.unitPerCardboard,
+                unitsPerPackage: p.unitsPerPackage,
+                weightMode: p.weightMode,
+                weightPerUnitKg: p.weightPerUnitKg,
+                weightPerPackageKg: p.weightPerPackageKg,
                 pricePerUnit: p.pricePerUnit,
                 currency: p.currency, // Added
                 agregationResult: p.agregationResult,
@@ -852,6 +859,7 @@ export async function getAggregationData(startDate: string, endDate: string) {
         const dataRows: any[][] = [];
         const packageCountRows: any[][] = [];
         const clientEmails: { [rowIdx: number]: string } = {};
+        const footerWeightTotals = new Map<string, number>();
 
 
         for (let i = 0; i < filteredOrders.length; i++) {
@@ -887,63 +895,39 @@ export async function getAggregationData(startDate: string, endDate: string) {
                 if (primaryKey) {
                     const product = productLookup.get(primaryKey);
                     const qty = Number(item.quantity) || 0;
+                    const packageCount = getPackageCount(
+                        {
+                            ...item,
+                            quantity: qty,
+                            unitsPerPackage: Number(item.unitsPerPackage) || undefined,
+                            weightPerPackageKg: Number(item.weightPerPackageKg) || undefined,
+                            weightMode: item.weightMode,
+                        },
+                        product
+                    );
+                    const { calculatedWeightKg } = calculateItemWeight(
+                        {
+                            ...item,
+                            quantity: qty,
+                            unitsPerPackage: Number(item.unitsPerPackage) || undefined,
+                            weightMode: item.weightMode,
+                            weightPerUnitKg: Number(item.weightPerUnitKg) || undefined,
+                            weightPerPackageKg: Number(item.weightPerPackageKg) || undefined,
+                            packageCount: packageCount || undefined,
+                        },
+                        product,
+                        { preferCurrentProduct: true }
+                    );
 
-                    const rawUnit = String(item.unit || product?.unit || '').trim().toLowerCase();
-                    const isItemWeightUnit = rawUnit === 'kg' || rawUnit === 'g' || rawUnit === 'кг' || rawUnit === 'г';
-                    const hasNetWeight = (item.netWeight && Number(item.netWeight) > 0) || (product?.netWeight && Number(product.netWeight) > 0);
-
-                    let valueToAdd = 0;
-                    let pkgCountToAdd = 0;
-
-                    // --- Value calculation (differs by unit type) ---
-                    if (isItemWeightUnit) {
-                        // Weight-based: quantity is already weight
-                        valueToAdd = qty;
-                    } else if (hasNetWeight) {
-                        // Piece-based with known weight: calculate total weight
-                        // Need pkg count first for weight calculation
-                        let pkgForWeight = Number(item.packageCount) || 0;
-                        if (pkgForWeight <= 0) {
-                            const parsed = parseInt(item.additionalInfo);
-                            if (!isNaN(parsed) && parsed > 0) pkgForWeight = parsed;
-                            else {
-                                const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
-                                pkgForWeight = inPack > 0 ? (qty / inPack) : 0;
-                            }
-                        }
-                        const weightPerPack = Number(item.netWeight || product?.netWeight || 0);
-                        valueToAdd = (pkgForWeight || 0) * weightPerPack;
-                    } else {
-                        // Piece-based without weight: just use quantity
-                        valueToAdd = qty;
-                    }
-
-                    // --- Package count (UNIVERSAL for all unit types) ---
-                    // Priority 1: Explicit packageCount from order (set at checkout)
-                    // Check if packageCount is defined (even if 0), not just truthy
-                    if (item.packageCount !== null && item.packageCount !== undefined) {
-                        pkgCountToAdd = Number(item.packageCount);
-                    } else {
-                        // Priority 2: Parse from additionalInfo (e.g. "3 wor" → 3, "2 kart" → 2)
-                        const parsed = parseInt(item.additionalInfo);
-                        if (!isNaN(parsed) && parsed > 0) {
-                            pkgCountToAdd = parsed;
-                        } else {
-                            // Priority 3: Mathematical fallback
-                            if (isItemWeightUnit) {
-                                // For weight: packages = total weight / weight per package
-                                const weightPerPack = Number(item.netWeight || product?.netWeight || 0);
-                                pkgCountToAdd = weightPerPack > 0 ? (qty / weightPerPack) : (qty > 0 ? 1 : 0);
-                            } else {
-                                // For pieces: packages = total pieces / pieces per package
-                                const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
-                                pkgCountToAdd = inPack > 0 ? (qty / inPack) : (qty > 0 ? 1 : 0);
-                            }
-                        }
-                    }
+                    const valueToAdd = qty;
+                    const pkgCountToAdd = packageCount;
 
                     const current = orderWeights.get(primaryKey) || 0;
                     orderWeights.set(primaryKey, current + valueToAdd);
+                    footerWeightTotals.set(
+                        primaryKey,
+                        (footerWeightTotals.get(primaryKey) || 0) + (Number(calculatedWeightKg) || 0)
+                    );
 
                     const currentPkg = orderPackageCounts.get(primaryKey) || { count: 0, packageType: 'kart' };
                     // If multiple items, we might overwrite type, but usually it's consistent.
@@ -969,7 +953,7 @@ export async function getAggregationData(startDate: string, endDate: string) {
 
                 // Find product
                 let product = null;
-                if (item.productId) product = productLookup.get(Number(item.productId));
+                if (item.productId) product = productLookup.get(String(item.productId));
                 else {
                     for (const k of sortedKeys) {
                         if (k.startsWith(item.name + ' [ID:')) {
@@ -979,58 +963,21 @@ export async function getAggregationData(startDate: string, endDate: string) {
                     }
                 }
 
-                const rawUnit = String(item.unit || product?.unit || '').trim().toLowerCase();
-                const isService = ['godz', 'h', 'min', 'm', 'usł', 'srv', 'km'].includes(rawUnit);
-                const isItemWeightUnit = rawUnit === 'kg' || rawUnit === 'g' || rawUnit === 'кг' || rawUnit === 'г';
-                const hasNetWeight = !isService && ((item.netWeight && Number(item.netWeight) > 0) || (product?.netWeight && Number(product.netWeight) > 0));
+                const { calculatedWeightKg } = calculateItemWeight(
+                    {
+                        ...item,
+                        quantity: qty,
+                        unitsPerPackage: Number(item.unitsPerPackage) || undefined,
+                        weightMode: item.weightMode,
+                        weightPerUnitKg: Number(item.weightPerUnitKg) || undefined,
+                        weightPerPackageKg: Number(item.weightPerPackageKg) || undefined,
+                        packageCount: getPackageCount(item, product) || undefined,
+                    },
+                    product,
+                    { preferCurrentProduct: true }
+                );
 
-                let weight = 0;
-
-                if (isItemWeightUnit) {
-                    weight = qty;
-                } else if (hasNetWeight) {
-                    let pkgCount = item.packageCount;
-                    if (!pkgCount) {
-                        const parsed = parseInt(item.additionalInfo);
-                        if (!isNaN(parsed)) pkgCount = parsed;
-                        else {
-                            const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
-                            pkgCount = inPack > 0 ? (qty / inPack) : 0;
-                        }
-                    }
-                    const weightPerPack = Number(item.netWeight || product?.netWeight || 0);
-                    weight = (pkgCount || 0) * weightPerPack;
-                } else {
-                    // Case 3: Pure pieces.
-                    // New Requirement: Treat as 1kg per package
-                    let pkgCount = item.packageCount;
-                    if (!pkgCount && pkgCount !== 0) { // Check strictly for null/undefined if 0 is valid
-                        const parsed = parseInt(item.additionalInfo);
-                        if (!isNaN(parsed) && parsed > 0) {
-                            pkgCount = parsed;
-                        } else {
-                            // Only if we can infer package count
-                            const inPack = Number(item.unitPerCardboard || product?.unitPerCardboard || 1);
-                            if (inPack > 0) {
-                                pkgCount = (qty / inPack);
-                            } else {
-                                // If no package info, treat as 0 weight or 0 packages?
-                                // If it's pure pieces and we have NO idea about packages, likely 0.
-                                // But if it's "10 pcs", maybe it's 1 package?
-                                // Safer to assume 1 package if qty > 0 and no other info?
-                                // User said "1 package = 1kg".
-                                // If we don't know packages, we can't add weight.
-                                pkgCount = 0;
-                            }
-                        }
-                    }
-
-                    if (pkgCount > 0) {
-                        weight = pkgCount * 1; // 1kg per package
-                    }
-                }
-
-                rowTotalWeight += weight;
+                rowTotalWeight += Number(calculatedWeightKg || 0);
             }
 
 
@@ -1103,13 +1050,13 @@ export async function getAggregationData(startDate: string, endDate: string) {
         dataRows.forEach(row => {
             // Weight column is index 1 now
             footerRow[1] = (footerRow[1] as number) + (Number(row[1]) || 0);
-
-            // Product columns start at index 2
-            for (let j = 0; j < sortedKeys.length; j++) {
-                const colIndex = 2 + j;
-                footerRow[colIndex] = (footerRow[colIndex] as number) + (Number(row[colIndex]) || 0);
-            }
         });
+
+        for (let j = 0; j < sortedKeys.length; j++) {
+            const key = sortedKeys[j];
+            const colIndex = 2 + j;
+            footerRow[colIndex] = Number(footerWeightTotals.get(key) || 0);
+        }
 
         // Calculate columns sums for package counts
         const packageCountFooter: any[] = ['TOTAL', 0];
@@ -1239,8 +1186,7 @@ export async function updateOrderCell(orderId: string, field: string, value: any
             const newValue = Number(value);
 
             // Check metadata/defaults for this product.
-            const metaResults = await db.select().from(productMetadata).where(eq(productMetadata.id, productId));
-            const meta = metaResults[0];
+            const meta = await getProductMetadataById(productId);
             const aggResult = meta?.agregationResult || 'weight'; // default
 
             if (aggResult === 'cardboard') {

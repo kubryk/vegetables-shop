@@ -7,9 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Plus, RefreshCw, Save, Trash2, LayoutDashboard, Utensils, Search, Package, Image as ImageIcon, Pencil, Download, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Download, ExternalLink, Image as ImageIcon, LayoutDashboard, Loader2, Package, Pencil, Plus, RefreshCw, Save, Search, Trash2, Utensils } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Separator } from '@/components/ui/separator';
+import { isWeightUnit } from '@/lib/weights';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 
@@ -22,6 +22,37 @@ interface ProductFormProps {
     setShowAddForm: (val: boolean) => void;
     setEditingId: (val: string | null) => void;
     isInline?: boolean;
+}
+
+function formatPackageSummary(product: {
+    unit?: string | null;
+    unitsPerPackage?: number | null;
+    unitPerCardboard?: number | null;
+    weightPerPackageKg?: number | null;
+    netWeight?: number | null;
+}) {
+    const unit = String(product.unit || '').trim() || 'unit';
+    const normalizedUnit = unit.toLowerCase();
+    const unitsPerPackage = Number(product.unitsPerPackage ?? product.unitPerCardboard ?? 0) || 0;
+    const packageWeightKg = Number(product.weightPerPackageKg ?? product.netWeight ?? 0) || 0;
+
+    if (['kg', 'кг', 'g', 'г'].includes(normalizedUnit)) {
+        return packageWeightKg > 0 ? `${packageWeightKg} кг` : unit;
+    }
+
+    if (unitsPerPackage > 0 && packageWeightKg > 0) {
+        return `${unitsPerPackage} ${unit} (${packageWeightKg} кг)`;
+    }
+
+    if (unitsPerPackage > 0) {
+        return `${unitsPerPackage} ${unit}`;
+    }
+
+    if (packageWeightKg > 0) {
+        return `${packageWeightKg} кг`;
+    }
+
+    return 'не задано';
 }
 
 const ProductForm = ({
@@ -297,6 +328,35 @@ const ProductForm = ({
     );
 }
 
+function getWeightStatus(product: any) {
+    const weightPerPackageKg = Number(product.weightPerPackageKg ?? product.netWeight ?? 0);
+
+    if (isWeightUnit(product.unit)) {
+        return {
+            tone: 'ok' as const,
+            label: 'Вага з Fakturownia',
+            hint: 'вага береться з invoice quantity',
+            badgeClassName: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900'
+        };
+    }
+
+    if (weightPerPackageKg > 0) {
+        return {
+            tone: 'ok' as const,
+            label: `${weightPerPackageKg} кг / пак.`,
+            hint: 'вага з Fakturownia',
+            badgeClassName: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900'
+        };
+    }
+
+    return {
+        tone: 'missing' as const,
+        label: 'Немає ваги',
+        hint: 'у Fakturownia не задано weight / weight_unit',
+        badgeClassName: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900'
+    };
+}
+
 export default function ProductsPage() {
     const [products, setProducts] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -368,6 +428,23 @@ export default function ProductsPage() {
         }
     }
 
+    function applyLocalMetadataUpdate(productId: string) {
+        const nextPosition = Number(newProduct.position) || 0;
+
+        setProducts((prevProducts) => prevProducts.map((product) => {
+            if (product.id !== productId) {
+                return product;
+            }
+
+            return {
+                ...product,
+                image: newProduct.image,
+                agregationResult: newProduct.agregationResult,
+                position: nextPosition,
+            };
+        }));
+    }
+
     async function handleSync() {
         setIsSyncing(true);
         const result = await syncProducts();
@@ -412,16 +489,16 @@ export default function ProductsPage() {
         let result;
 
         if (editingId) {
-            // Only update local metadata
             const metaResult = await updateProductMetadata(editingId, {
                 image: newProduct.image,
                 agregationResult: newProduct.agregationResult,
-                position: newProduct.position
+                position: newProduct.position,
             });
 
             if (metaResult.success) {
-                result = { success: true };
+                applyLocalMetadataUpdate(editingId);
                 toast.success('Локальні налаштування оновлено');
+                return;
             } else {
                 result = metaResult;
             }
@@ -509,6 +586,7 @@ export default function ProductsPage() {
 
 
     const filteredProducts = products;
+    const productsWithoutWeight = filteredProducts.filter((product) => getWeightStatus(product).tone === 'missing').length;
 
     if (!isMounted) {
         return (
@@ -533,7 +611,7 @@ export default function ProductsPage() {
             </div>
 
             {/* Stats / Quick Info */}
-            <div className="grid grid-cols-2 gap-4 sm:gap-6">
+            <div className="grid grid-cols-3 gap-4 sm:gap-6">
                 <Card className="border-none shadow-sm bg-white dark:bg-zinc-900 overflow-hidden">
                     <CardHeader className="p-2 sm:p-4 pb-1 sm:pb-2 text-center">
                         <CardDescription className="text-[10px] sm:text-xs uppercase font-bold tracking-wider">Всього</CardDescription>
@@ -545,6 +623,15 @@ export default function ProductsPage() {
                         <CardDescription className="text-[10px] sm:text-xs uppercase font-bold tracking-wider">Активні</CardDescription>
                         <CardTitle className="text-2xl sm:text-3xl font-black text-green-600">
                             {activeCount}
+                        </CardTitle>
+                        </CardHeader>
+                    </Card>
+                <Card className="border-none shadow-sm bg-white dark:bg-zinc-900 overflow-hidden">
+                    <CardHeader className="p-2 sm:p-4 pb-1 sm:pb-2 text-center">
+                        <CardDescription className="text-[10px] sm:text-xs uppercase font-bold tracking-wider">Без ваги</CardDescription>
+                        <CardTitle className="text-2xl sm:text-3xl font-black text-rose-600 flex items-center justify-center gap-2">
+                            <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6" />
+                            {productsWithoutWeight}
                         </CardTitle>
                     </CardHeader>
                 </Card>
@@ -611,8 +698,15 @@ export default function ProductsPage() {
                         <div>
                             {/* Mobile View (Cards) */}
                             <div className="grid grid-cols-1 gap-0 divide-y divide-zinc-100 dark:divide-zinc-800 md:hidden">
-                                {filteredProducts.map((p) => (
-                                    <div key={p.id} className={cn("flex flex-col bg-white dark:bg-zinc-900 transition-all", editingId === p.id && "ring-2 ring-primary ring-inset border-primary shadow-lg")}>
+                                {filteredProducts.map((p) => {
+                                    const weightStatus = getWeightStatus(p);
+
+                                    return (
+                                    <div key={p.id} className={cn(
+                                        "flex flex-col bg-white dark:bg-zinc-900 transition-all",
+                                        weightStatus.tone === 'missing' && "bg-rose-50/70 dark:bg-rose-950/20 border-l-4 border-l-rose-400 dark:border-l-rose-700",
+                                        editingId === p.id && "ring-2 ring-primary ring-inset border-primary shadow-lg"
+                                    )}>
                                         <div
                                             className="p-3 flex flex-col gap-3 cursor-pointer"
                                             onClick={() => startEdit(p)}
@@ -631,11 +725,9 @@ export default function ProductsPage() {
                                                         <Badge variant="secondary" className="px-2 py-0 h-5 text-[10px] rounded-md font-semibold bg-zinc-100 text-zinc-600 border-none">
                                                             {p.category}
                                                         </Badge>
-                                                        {p.agregationResult && (
-                                                            <Badge variant="outline" className="px-2 py-0 h-5 text-[10px] rounded-md font-semibold border-zinc-200 text-zinc-400">
-                                                                {p.agregationResult}
-                                                            </Badge>
-                                                        )}
+                                                        <Badge variant="outline" className={cn("px-2 py-0 h-5 text-[10px] rounded-md font-semibold", weightStatus.badgeClassName)}>
+                                                            {weightStatus.label}
+                                                        </Badge>
                                                         {p.additionalInfo && (
                                                             <Badge variant="outline" className="px-2 py-0 h-5 text-[10px] rounded-md font-semibold border-amber-200 text-amber-600 bg-amber-50 dark:bg-amber-900/10 dark:text-amber-400 dark:border-amber-800">
                                                                 {p.additionalInfo}
@@ -676,12 +768,11 @@ export default function ProductsPage() {
                                                         {new Intl.NumberFormat('de-DE', { style: 'currency', currency: p.currency || 'EUR' }).format(p.pricePerCardboard || 0)}
                                                     </p>
                                                     <span className="text-[10px] text-zinc-400 font-medium bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
-                                                        {p.unit === 'kg' ? `${p.netWeight} кг` : `${p.unitPerCardboard} шт`}
+                                                        {formatPackageSummary(p)}
                                                     </span>
                                                 </div>
                                             </div>
                                         </div>
-
 
                                         {editingId === p.id && (
                                             <div className="p-4 border-t-2 border-primary/10 bg-zinc-50/50 dark:bg-zinc-800/30 animate-in slide-in-from-top-2 duration-300">
@@ -698,7 +789,7 @@ export default function ProductsPage() {
                                             </div>
                                         )}
                                     </div>
-                                ))}
+                                )})}
                             </div>
 
                             {/* Desktop View (Table) */}
@@ -713,11 +804,15 @@ export default function ProductsPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                        {filteredProducts.map((p) => (
+                                        {filteredProducts.map((p) => {
+                                            const weightStatus = getWeightStatus(p);
+
+                                            return (
                                             <React.Fragment key={p.id}>
                                                 <tr
                                                     className={cn(
                                                         "group transition-colors cursor-pointer",
+                                                        weightStatus.tone === 'missing' && "bg-rose-50/70 dark:bg-rose-950/20",
                                                         editingId === p.id ? "bg-primary/5 dark:bg-primary/10" : "hover:bg-zinc-50/10 dark:hover:bg-zinc-800/20"
                                                     )}
                                                     onClick={() => startEdit(p)}
@@ -734,11 +829,9 @@ export default function ProductsPage() {
                                                             <div className="min-w-0">
                                                                 <div className="flex items-center gap-2">
                                                                     <p className="font-bold text-zinc-900 dark:text-zinc-100 truncate">{p.name}</p>
-                                                                    {p.agregationResult && (
-                                                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                                                                            {p.agregationResult}
-                                                                        </span>
-                                                                    )}
+                                                                    <Badge variant="outline" className={cn("px-1.5 py-0 h-5 text-[10px] rounded-md font-semibold", weightStatus.badgeClassName)}>
+                                                                        {weightStatus.label}
+                                                                    </Badge>
                                                                 </div>
                                                                 <div className="flex items-center gap-2 mt-0.5">
                                                                     <Badge variant="secondary" className="px-1.5 py-0 h-4 text-[10px] rounded-sm font-medium bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 group-hover:bg-white dark:group-hover:bg-zinc-700 transition-colors">
@@ -765,7 +858,7 @@ export default function ProductsPage() {
                                                     <td className="px-6 py-4 text-right">
                                                         <div className="inline-flex flex-col items-end">
                                                             <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                                                                {p.unit === 'kg' ? `${p.netWeight} кг` : `${p.unitPerCardboard} шт. ${p.netWeight > 0 ? `(${p.netWeight} кг)` : ''}`}
+                                                                {formatPackageSummary(p)}
                                                             </span>
                                                             <span className="text-[10px] text-zinc-400 uppercase tracking-tighter">
                                                                 {p.additionalInfo ? p.additionalInfo : 'в упаковці'}
@@ -820,7 +913,7 @@ export default function ProductsPage() {
                                                     </tr>
                                                 )}
                                             </React.Fragment>
-                                        ))}
+                                        )})}
                                     </tbody>
                                 </table>
                             </div>

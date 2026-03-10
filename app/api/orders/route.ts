@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { appendOrderToSheet } from '@/lib/google-sheets';
 import { db } from '@/lib/db';
 import { orders as ordersTable } from '@/lib/db/schema';
 import { findClientByEmail } from '@/lib/fakturownia';
+import { calculateItemWeight, getPackageCount, getUnitsPerPackage, getWeightMode, getWeightPerPackageKg } from '@/lib/weights';
 
 export async function POST(request: Request) {
     try {
@@ -12,11 +12,39 @@ export async function POST(request: Request) {
         const {
             customerName,
             customerEmail,
-            items,
+            items: rawItems,
             totalPrice,
             currency,
             orderDate,
         } = body;
+
+        const items = Array.isArray(rawItems) ? rawItems.map((item: any) => {
+            const quantity = Number(item.quantity) || 0;
+            const unitsPerPackage = getUnitsPerPackage(item) || undefined;
+            const weightPerPackageKg = getWeightPerPackageKg(item) || undefined;
+            const weightMode = getWeightMode(item);
+            const packageCount = getPackageCount(item);
+            const { calculatedWeightKg, weightSource } = calculateItemWeight({
+                ...item,
+                quantity,
+                unitsPerPackage,
+                weightPerPackageKg,
+                weightMode,
+                packageCount,
+            });
+
+            return {
+                ...item,
+                quantity,
+                unitsPerPackage,
+                weightMode,
+                weightPerUnitKg: Number(item.weightPerUnitKg || 0) || undefined,
+                weightPerPackageKg,
+                packageCount: packageCount > 0 ? packageCount : undefined,
+                calculatedWeightKg,
+                weightSource,
+            };
+        }) : [];
 
         const originalDate = new Date(orderDate);
 
@@ -39,8 +67,9 @@ export async function POST(request: Request) {
             .map((item: any) => {
                 const unit = item.unit || 'kg';
                 const quantity = Number(item.quantity) || 0;
+                const weightPart = item.calculatedWeightKg ? `, ${item.calculatedWeightKg} kg` : '';
 
-                return `${item.name} (${quantity} ${unit})${item.additionalInfo ? ` [${item.additionalInfo}]` : ''}`;
+                return `${item.name} (${quantity} ${unit}${weightPart})${item.additionalInfo ? ` [${item.additionalInfo}]` : ''}`;
             })
             .join('\n');
 

@@ -50,4 +50,3 @@ export const reports = pgTable("reports", {
     invoices: jsonb("invoices"), // Store invoice metadata: { [rowIndex]: { invoiceId, invoiceUrl, invoiceNumber, createdAt } }
     createdAt: timestamp("created_at").defaultNow(),
 });
-

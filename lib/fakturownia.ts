@@ -1,4 +1,6 @@
 import { Product } from '@/types/product';
+import { getProductMetadataRows } from '@/lib/product-metadata';
+import { getWeightMode, isWeightUnit } from '@/lib/weights';
 
 const FAKTUROWNIA_USERNAME = process.env.FAKTUROWNIA_USERNAME || 'kodarik';
 const FAKTUROWNIA_API_URL = `https://${FAKTUROWNIA_USERNAME}.fakturownia.pl`;
@@ -10,6 +12,8 @@ type FakturowniaProduct = {
     price_net: string; // Price per unit (e.g. per kg)
     quantity: string; // Quantity in a box (e.g. 6.0 for 6kg box)
     quantity_unit: string; // Unit (e.g. "kg")
+    weight?: string | null;
+    weight_unit?: string | null;
     image_url: string | null;
     tag_list: string[];
     code: string;
@@ -20,6 +24,20 @@ type FakturowniaProduct = {
     stock_level: string;
     additional_info?: string;
 };
+
+function parseWeightToKg(value?: string | null, unit?: string | null) {
+    const parsed = parseFloat(value || '');
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return 0;
+    }
+
+    const normalizedUnit = String(unit || 'kg').trim().toLowerCase();
+    if (normalizedUnit === 'g') {
+        return parsed / 1000;
+    }
+
+    return parsed;
+}
 
 // Map Fakturownia product to our internal Product type
 function mapFakturowniaToProduct(fp: FakturowniaProduct): Product | null {
@@ -34,11 +52,12 @@ function mapFakturowniaToProduct(fp: FakturowniaProduct): Product | null {
 
     // Normalize unit
     const rawUnit = (fp.quantity_unit || 'kg').toLowerCase();
-    const isPiece = rawUnit === 'szt' || rawUnit === 'pcs' || rawUnit === 'шт';
+    const isPiece = !isWeightUnit(rawUnit);
+    const fakturowniaWeightPerPackageKg = parseWeightToKg(fp.weight, fp.weight_unit);
 
     if (isPiece) {
         unitsInBox = parseFloat(fp.quantity) || 1;
-        boxWeight = 0; // Unknown weight if sold by pieces, or maybe description has it
+        boxWeight = fakturowniaWeightPerPackageKg;
     } else {
         boxWeight = parseFloat(fp.quantity) || 0;
         unitsInBox = 1;
@@ -49,6 +68,7 @@ function mapFakturowniaToProduct(fp: FakturowniaProduct): Product | null {
     // Determine availability (simple check for now)
     // If disabled is true, it's inactive.
     const isActive = !fp.disabled;
+    const weightManagedByFakturownia = isWeightUnit(rawUnit) || (isPiece && fakturowniaWeightPerPackageKg > 0);
 
     return {
         id: fp.id.toString(),
@@ -64,7 +84,10 @@ function mapFakturowniaToProduct(fp: FakturowniaProduct): Product | null {
         active: isActive,
         agregationResult: 'cardboard', // Defaulting to cardboard since they are box-only
         externalUrl: `${FAKTUROWNIA_API_URL}/products/${fp.id}`,
-        additionalInfo: fp.additional_info
+        additionalInfo: fp.additional_info,
+        weightPerUnitKg: undefined,
+        weightPerPackageKg: boxWeight || undefined,
+        weightManagedByFakturownia
     };
 }
 
@@ -75,13 +98,14 @@ export async function getFakturowniaProducts(): Promise<Product[]> {
         return [];
     }
 
-    // Fetch local metadata
-    const { db } = await import('@/lib/db');
-    const { productMetadata } = await import('@/lib/db/schema');
-
-    let metadataMap = new Map<string, { id: string; image: string | null; agregationResult: string | null; position: number | null; }>();
+    let metadataMap = new Map<string, {
+        id: string;
+        image: string | null;
+        agregationResult: string | null;
+        position: number | null;
+    }>();
     try {
-        const metadata = await db.select().from(productMetadata);
+        const metadata = await getProductMetadataRows();
         metadata.forEach(m => metadataMap.set(m.id, m));
     } catch (e) {
         console.error('Failed to fetch product metadata:', e);
@@ -129,11 +153,24 @@ export async function getFakturowniaProducts(): Promise<Product[]> {
                 .filter((p): p is Product => p !== null)
                 .map(p => {
                     const meta = metadataMap.get(p.id);
+                    const unitsPerPackage = p.unitPerCardboard || undefined;
+
                     return {
                         ...p,
                         image: meta?.image || p.image,
                         agregationResult: (meta?.agregationResult as any) || p.agregationResult,
-                        position: meta?.position ?? 0
+                        position: meta?.position ?? 0,
+                        weightMode: getWeightMode({
+                            ...p,
+                            unitsPerPackage,
+                        }),
+                        weightPerUnitKg: p.weightPerUnitKg,
+                        weightPerPackageKg: p.weightPerPackageKg || p.netWeight || undefined,
+                        unitsPerPackage,
+                        // Keep legacy Fakturownia packaging fields intact.
+                        netWeight: p.netWeight,
+                        unitPerCardboard: p.unitPerCardboard,
+                        weightManagedByFakturownia: Boolean(p.weightManagedByFakturownia)
                     };
                 });
 

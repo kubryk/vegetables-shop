@@ -6,6 +6,7 @@ import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Check, Minus, Plus, ShoppingCart, Leaf } from 'lucide-react';
+import { isWeightUnit } from '@/lib/weights';
 
 type ProductCardProps = {
   product: Product;
@@ -36,10 +37,10 @@ const ProductCard = ({ product }: ProductCardProps) => {
   };
 
   const formattedPricePerCardboard = formatMoney(product.pricePerCardboard || 0);
-  const packageWeightKg = product.netWeight || 0;
-  // If we have unitPerCardboard, use it for total quantity calculation if unit is pieces, otherwise weight
-  const unitsPerPackage = product.unitPerCardboard || 1;
+  const packageWeightKg = product.weightPerPackageKg || product.netWeight || 0;
+  const unitsPerPackage = product.unitsPerPackage || product.unitPerCardboard || 1;
   const packagePrice = product.pricePerCardboard || 0;
+  const isInvoiceWeightUnit = isWeightUnit(product.unit);
 
   const derivedPricePerUnit =
     packageWeightKg > 0 && packagePrice > 0 ? packagePrice / packageWeightKg : 0;
@@ -57,6 +58,11 @@ const ProductCard = ({ product }: ProductCardProps) => {
 
   const hasPackage = (packageWeightKg > 0 || unitsPerPackage > 1) && packagePrice > 0;
   const hasPerUnit = pricePerUnit > 0;
+  const packageDescriptor = isInvoiceWeightUnit
+    ? `${formatKg(packageWeightKg)} kg`
+    : packageWeightKg > 0
+      ? `${unitsPerPackage} ${product.unit} (${formatKg(packageWeightKg)} kg)`
+      : `${unitsPerPackage} ${product.unit}`;
 
   const handleAddToCart = () => {
     // Calculate total weight/quantity based on selected packages
@@ -71,11 +77,10 @@ const ProductCard = ({ product }: ProductCardProps) => {
       selectedQuantity
     });
 
-    const isPieceUnit = ['pcs', 'шт', 'szt', 'item', 'unit'].includes(String(product.unit || '').toLowerCase());
-    if (isPieceUnit && unitsPerPackage > 0) {
+    if (!isInvoiceWeightUnit && unitsPerPackage > 0) {
       totalQuantity = selectedQuantity * unitsPerPackage;
       console.log('Piece-based product, totalQuantity:', totalQuantity);
-    } else if (packageWeightKg > 0) {
+    } else if (isInvoiceWeightUnit && packageWeightKg > 0) {
       totalQuantity = selectedQuantity * packageWeightKg;
       console.log('Weight-based product, totalQuantity:', totalQuantity);
     }
@@ -182,7 +187,7 @@ const ProductCard = ({ product }: ProductCardProps) => {
                   {formattedPricePerCardboard}
                 </span>
                 <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  pro {packageWeightKg > 0 ? formatKg(packageWeightKg) : (product.unitPerCardboard || 1)} {product.unit}
+                  pro {packageDescriptor}
                 </span>
               </div>
             )}
@@ -226,9 +231,11 @@ const ProductCard = ({ product }: ProductCardProps) => {
                 </span>
                 {hasPackage && (
                   <span className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 mt-0.5">
-                    {packageWeightKg > 0
-                      ? `${formatKg(totalKg)} ${product.unit}`
-                      : `${selectedQuantity * (product.unitPerCardboard || 1)} ${product.unit}`
+                    {isInvoiceWeightUnit
+                      ? `${formatKg(totalKg)} kg`
+                      : packageWeightKg > 0
+                        ? `${selectedQuantity * unitsPerPackage} ${product.unit} • ${formatKg(totalKg)} kg`
+                        : `${selectedQuantity * unitsPerPackage} ${product.unit}`
                     }
                   </span>
                 )}

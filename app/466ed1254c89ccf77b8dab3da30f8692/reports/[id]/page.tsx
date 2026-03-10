@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { getReport, updateReportData, createInvoiceForReportRow, duplicateReport } from '@/app/actions/reports';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { calculateItemWeight } from '@/lib/weights';
 
 const DRIVER_COLORS = [
     { bg: 'bg-blue-50 dark:bg-blue-950', border: 'border-blue-400', text: 'text-blue-900 dark:text-blue-100' },
@@ -51,6 +52,88 @@ function extractPackageType(text: string | undefined): string | null {
     if (lower.includes('box') || lower.includes('ящ') || lower.includes('box')) return 'box';
     if (lower.includes('kart') || lower.includes('кор')) return 'kart';
     return null;
+}
+
+function getUnitsPerPackage(meta: any) {
+    return Number(meta?.unitsPerPackage ?? meta?.unitPerCardboard ?? 0) || 0;
+}
+
+function getWeightPerPackageKg(meta: any) {
+    return Number(meta?.weightPerPackageKg ?? meta?.netWeight ?? 0) || 0;
+}
+
+function getCellWeightKg(meta: any, quantity: number, packageCount?: number) {
+    const { calculatedWeightKg } = calculateItemWeight(
+        {
+            unit: meta?.unit,
+            quantity,
+            packageCount,
+            weightMode: meta?.weightMode,
+            weightPerUnitKg: Number(meta?.weightPerUnitKg ?? 0) || undefined,
+            weightPerPackageKg: getWeightPerPackageKg(meta) || undefined,
+            unitsPerPackage: getUnitsPerPackage(meta) || undefined,
+        },
+        meta,
+        { preferCurrentProduct: true }
+    );
+
+    return Number(calculatedWeightKg || 0);
+}
+
+function getPackageCountValue(cell: any) {
+    return typeof cell === 'object' && cell !== null ? Number(cell.count) || 0 : (Number(cell) || 0);
+}
+
+function getRowWeightKg(reportData: any, rowIdx: number) {
+    const row = reportData?.rows?.[rowIdx];
+    if (!Array.isArray(row)) {
+        return 0;
+    }
+
+    let rowWeight = 0;
+    for (let colIdx = 2; colIdx < row.length; colIdx++) {
+        const meta = reportData?.headerMetadata?.[colIdx];
+        const quantity = Number(row[colIdx]) || 0;
+        const packageCount = getPackageCountValue(reportData?.packageCountRows?.[rowIdx]?.[colIdx]);
+        rowWeight += getCellWeightKg(meta, quantity, packageCount);
+    }
+
+    return rowWeight;
+}
+
+function buildWeightFooter(reportData: any) {
+    const columnCount = Math.max(
+        Array.isArray(reportData?.headers) ? reportData.headers.length : 0,
+        Array.isArray(reportData?.footer) ? reportData.footer.length : 0
+    );
+    const footer = Array.from({ length: columnCount }, (_, index) => {
+        if (index === 0) {
+            return reportData?.footer?.[0] || 'TOTAL';
+        }
+
+        return Number(reportData?.footer?.[index]) || 0;
+    });
+    const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
+    const packageCountRows = Array.isArray(reportData?.packageCountRows) ? reportData.packageCountRows : [];
+
+    footer[1] = 0;
+
+    for (let colIdx = 2; colIdx < columnCount; colIdx++) {
+        const meta = reportData?.headerMetadata?.[colIdx];
+        let productWeightTotal = 0;
+
+        for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+            const quantity = Number(rows[rowIdx]?.[colIdx]) || 0;
+            const packageCount = getPackageCountValue(packageCountRows[rowIdx]?.[colIdx]);
+            const cellWeight = getCellWeightKg(meta, quantity, packageCount);
+            productWeightTotal += cellWeight;
+            footer[1] = (Number(footer[1]) || 0) + cellWeight;
+        }
+
+        footer[colIdx] = productWeightTotal;
+    }
+
+    return footer;
 }
 
 // Simple Editable Cell Component (Reused logic)
@@ -441,14 +524,7 @@ export default function ReportDetailPage() {
         if (!report || !report.data) return;
 
         const reportData = report.data;
-
-        const getColName = (idx: number) => {
-            let let1 = Math.floor(idx / 26) - 1;
-            let let2 = idx % 26;
-            return let1 >= 0 ? String.fromCharCode(65 + let1) + String.fromCharCode(65 + let2) : String.fromCharCode(65 + let2);
-        };
-
-        const lastColName = getColName(reportData.headers.length - 1);
+        const weightFooter = buildWeightFooter(reportData);
 
         let html = '<table border="1">';
 
@@ -469,8 +545,8 @@ export default function ReportDetailPage() {
             html += `<td>${row[0] ? String(row[0]) : ''}</td>`;
 
             // Total Weight (Index 1)
-            const excelRow = rowIdx + 2;
-            html += `<td>=SUM(C${excelRow}:${lastColName}${excelRow})</td>`;
+        const totalWeight = getRowWeightKg(reportData, rowIdx);
+        html += `<td>${Number.isInteger(totalWeight) ? totalWeight.toFixed(0) : totalWeight.toFixed(1)}</td>`;
 
             // Products
             for (let i = 2; i < row.length; i++) {
@@ -523,30 +599,22 @@ export default function ReportDetailPage() {
         }
 
         // 3. Footers
-        const lastRowExcelIdx = reportData.rows.length + 1;
-
         // Footer 1: Value Totals
         html += '<tr>';
         html += '<td>TOTAL (вага)</td>';
-        html += `<td>=SUM(B2:B${lastRowExcelIdx})</td>`;
+        const footerWeight = Number(weightFooter[1]) || 0;
+        html += `<td>${Number.isInteger(footerWeight) ? footerWeight.toFixed(0) : footerWeight.toFixed(1)}</td>`;
 
-        for (let i = 2; i < reportData.footer.length; i++) {
-            const colName = getColName(i);
-            const cellVal = Number(reportData.footer[i]) || 0;
+        for (let i = 2; i < weightFooter.length; i++) {
+            const cellVal = Number(weightFooter[i]) || 0;
             if (cellVal === 0) {
                 html += '<td>0</td>';
                 continue;
             }
 
-            const meta = reportData.headerMetadata?.[i];
-            const rawUnit = String(meta?.unit || '').trim().toLowerCase();
-            const isWeight = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
-
-            if (isWeight) {
-                html += `<td>=SUM(${colName}2:${colName}${lastRowExcelIdx})</td>`;
-            } else {
-                html += '<td>0</td>';
-            }
+            const formattedWeight = Number.isInteger(cellVal) ? cellVal.toFixed(0) : cellVal.toFixed(1);
+            const msoFormat = Number.isInteger(cellVal) ? '0' : '0.0';
+            html += `<td style="mso-number-format:'${msoFormat} &quot;kg&quot;';">${formattedWeight}</td>`;
         }
         html += '</tr>';
 
@@ -556,7 +624,7 @@ export default function ReportDetailPage() {
         // Grand total packages is intentionally left empty for copied sheet
         html += '<td></td>';
 
-        for (let i = 2; i < reportData.footer.length; i++) {
+        for (let i = 2; i < weightFooter.length; i++) {
             const pkgData = reportData.packageCountFooter?.[i];
             const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
             const meta = reportData.headerMetadata?.[i];
@@ -605,7 +673,6 @@ export default function ReportDetailPage() {
         const newData = { ...report.data };
         const newRows = [...newData.rows];
         const newRow = [...newRows[rowIdx]];
-        const newFooter = [...newData.footer];
 
         const header = newData.headers[headerIdx];
         // Index 0 is Client (text). Index 1 is Weight (number). Index 2+ are Products (number).
@@ -636,8 +703,8 @@ export default function ReportDetailPage() {
 
                     if (currentVal > 0 && currentPkgCount > 0) {
                         storageVal = Number(val) * (currentVal / currentPkgCount);
-                    } else if (meta.unitPerCardboard > 0) {
-                        storageVal = Number(val) * meta.unitPerCardboard;
+                    } else if (getUnitsPerPackage(meta) > 0) {
+                        storageVal = Number(val) * getUnitsPerPackage(meta);
                     }
                 }
             }
@@ -698,15 +765,15 @@ export default function ReportDetailPage() {
                             if (match) {
                                 const pkgCountFromMeta = parseFloat(match[1]);
                                 if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
-                                    if (meta.netWeight > 0 && pkgCountFromMeta > 0) {
-                                        const ratio = pkgCountFromMeta / meta.netWeight;
+                                    if (getWeightPerPackageKg(meta) > 0 && pkgCountFromMeta > 0) {
+                                        const ratio = pkgCountFromMeta / getWeightPerPackageKg(meta);
                                         newPkgCount = weightOrQty * ratio;
                                         foundFromOriginal = true;
                                     }
                                 } else {
-                                    if (meta.unitPerCardboard > 0 && pkgCountFromMeta > 0) {
+                                    if (getUnitsPerPackage(meta) > 0 && pkgCountFromMeta > 0) {
                                         // Standard: qty / capacity = packages
-                                        newPkgCount = weightOrQty / meta.unitPerCardboard;
+                                        newPkgCount = weightOrQty / getUnitsPerPackage(meta);
                                         foundFromOriginal = true;
                                     } else if (pkgCountFromMeta > 0) {
                                         // Fallback: if no capacity, assume the meta number might be capacity
@@ -724,9 +791,9 @@ export default function ReportDetailPage() {
 
                     if (!foundFromOriginal) {
                         if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
-                            if (meta.netWeight > 0) newPkgCount = weightOrQty / meta.netWeight;
+                            if (getWeightPerPackageKg(meta) > 0) newPkgCount = weightOrQty / getWeightPerPackageKg(meta);
                         } else {
-                            if (meta.unitPerCardboard > 0) newPkgCount = weightOrQty / meta.unitPerCardboard;
+                            if (getUnitsPerPackage(meta) > 0) newPkgCount = weightOrQty / getUnitsPerPackage(meta);
                         }
                     }
                 }
@@ -821,53 +888,21 @@ export default function ReportDetailPage() {
             const pkgRow = newData.packageCountRows?.[rowIdx];
 
             for (let i = 2; i < newRow.length; i++) {
-                const colHeader = newData.headers[i];
                 const meta = newData.headerMetadata?.[i];
+                const qty = Number(newRow[i]) || 0;
+                const pkgData = pkgRow?.[i];
+                const packageCount = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
 
-                // Check metadata for unit, fallback to header string check
-                let isWeightColumn = false;
-                if (meta && meta.unit) {
-                    isWeightColumn = ['kg', 'кг', 'g', 'г'].includes(meta.unit.toLowerCase());
-                } else if (colHeader) {
-                    isWeightColumn = colHeader.includes('(кг)');
-                }
-
-                if (isWeightColumn) {
-                    rowTotal += Number(newRow[i]) || 0;
-                } else {
-                    // Treat non-weight unit packages as 1kg each
-                    if (pkgRow) {
-                        const pkgData = pkgRow[i];
-                        const count = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
-                        if (count > 0) {
-                            rowTotal += count;
-                        }
-                    }
-                }
+                rowTotal += getCellWeightKg(meta, qty, packageCount);
             }
             newRow[1] = rowTotal;
         }
 
-        // 4. Recalculate Footer for Modified Column
-        if (isNumberCol) {
-            let colTotal = 0;
-            for (let r = 0; r < newRows.length; r++) {
-                colTotal += Number(newRows[r][headerIdx]) || 0;
-            }
-            newFooter[headerIdx] = colTotal;
-        }
-
-        // 5. Recalculate Footer for Grand Total (Index 1)
-        if (isNumberCol && headerIdx >= 1) {
-            let totalWeight = 0;
-            for (let r = 0; r < newRows.length; r++) {
-                totalWeight += Number(newRows[r][1]) || 0; // Sum up the row totals
-            }
-            newFooter[1] = totalWeight;
-        }
-
         newData.rows = newRows;
-        newData.footer = newFooter;
+        newData.footer = buildWeightFooter({
+            ...newData,
+            rows: newRows,
+        });
 
 
         // 6. Recalculate Driver Rows if assignments exist
@@ -964,39 +999,15 @@ export default function ReportDetailPage() {
                         }
                     }
                 }
+
+                driverRow[1] += Number(orderRow[1]) || 0;
             }
         });
 
         // Calculate Row Totals for Drivers (Weight and Other Units)
         newDriverRows.forEach((row, dIdx) => {
-            let totalWeight = 0;
-            const otherUnitsMap: Record<string, number> = {};
+            const totalWeight = Number(row[1]) || 0;
             const pkgRow = newDriverPkgRows[dIdx];
-
-            for (let i = 2; i < row.length; i++) {
-                const qty = Number(row[i]) || 0;
-                const meta = fullReportData.headerMetadata?.[i];
-
-                // Get pkg count for this cell
-                const pkgCell = pkgRow && pkgRow[i];
-                const pkgCount = typeof pkgCell === 'object' && pkgCell !== null ? pkgCell.count : (Number(pkgCell) || 0);
-
-                if (meta && qty > 0) {
-                    const unit = meta.unit?.toLowerCase().trim();
-                    if (['kg', 'кг'].includes(unit)) {
-                        totalWeight += qty;
-                    } else if (['g', 'г'].includes(unit)) {
-                        totalWeight += qty / 1000;
-                    } else if (meta.netWeight > 0) {
-                        totalWeight += qty * meta.netWeight;
-                    } else {
-                        // Treat non-weight unit packages as 1kg each
-                        if (pkgCount > 0) {
-                            totalWeight += pkgCount;
-                        }
-                    }
-                }
-            }
 
             // Store comprehensive total object instead of just number
             row[1] = { weight: totalWeight };
@@ -1129,10 +1140,11 @@ export default function ReportDetailPage() {
             const meta = report.data.headerMetadata?.[headerIdx];
             if (meta) {
                 const rawUnit = String(meta.unit || '').trim().toLowerCase();
+                const isWeight = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
                 // If original was g/г, we displayed kg (val). Convert back to g.
                 if (['g', 'г'].includes(rawUnit)) {
                     storageVal = Number(val) * 1000;
-                } else {
+                } else if (!isWeight) {
                     // Invert package count for drivers too
                     const currentVal = Number(driverRows[rowIdx][headerIdx]) || 0;
                     const currentPkgData = driverPackageCountRows?.[rowIdx]?.[headerIdx];
@@ -1140,8 +1152,8 @@ export default function ReportDetailPage() {
 
                     if (currentVal > 0 && currentPkgCount > 0) {
                         storageVal = Number(val) * (currentVal / currentPkgCount);
-                    } else if (meta.unitPerCardboard > 0) {
-                        storageVal = Number(val) * meta.unitPerCardboard;
+                    } else if (getUnitsPerPackage(meta) > 0) {
+                        storageVal = Number(val) * getUnitsPerPackage(meta);
                     }
                 }
             }
@@ -1181,8 +1193,8 @@ export default function ReportDetailPage() {
 
                     if (pkgCountFromMeta > 0) {
                         if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
-                            if (meta.netWeight > 0) {
-                                const ratio = pkgCountFromMeta / meta.netWeight;
+                            if (getWeightPerPackageKg(meta) > 0) {
+                                const ratio = pkgCountFromMeta / getWeightPerPackageKg(meta);
                                 newPkgCount = weightOrQty * ratio;
                             }
                         } else {
@@ -1193,9 +1205,9 @@ export default function ReportDetailPage() {
                             // Actually, if additionalInfo is "3 box", it usually describes the PACKAGING itself or capacity.
                             // But usually `pkgCountFromMeta` IS the capacity if the string is like "12kg / 3box".
 
-                            if (meta.unitPerCardboard > 0) {
+                            if (getUnitsPerPackage(meta) > 0) {
                                 // Standard: qty / capacity = packages
-                                newPkgCount = weightOrQty / meta.unitPerCardboard;
+                                newPkgCount = weightOrQty / getUnitsPerPackage(meta);
                             } else {
                                 // Fallback: if no capacity, maybe 1 to 1? Or just use the input?
                                 // Previously it was multiplying, which is wrong if we enter pieces.
@@ -1208,9 +1220,9 @@ export default function ReportDetailPage() {
                     // Fallback calculation
                     if (newPkgCount === 0) {
                         if (['kg', 'кг', 'g', 'г'].includes(meta.unit?.toLowerCase())) {
-                            if (meta.netWeight > 0) newPkgCount = weightOrQty / meta.netWeight;
+                            if (getWeightPerPackageKg(meta) > 0) newPkgCount = weightOrQty / getWeightPerPackageKg(meta);
                         } else {
-                            if (meta.unitPerCardboard > 0) newPkgCount = weightOrQty / meta.unitPerCardboard;
+                            if (getUnitsPerPackage(meta) > 0) newPkgCount = weightOrQty / getUnitsPerPackage(meta);
                         }
                     }
                 }
@@ -1246,24 +1258,13 @@ export default function ReportDetailPage() {
         if (isNumberCol && headerIdx >= 2) {
             let rowTotal = 0;
             for (let i = 2; i < newDriverRow.length; i++) {
-                const colHeader = report.data.headers[i];
                 const qty = Number(newDriverRow[i]) || 0;
                 const meta = report.data.headerMetadata?.[i];
 
                 if (meta) {
-                    const unit = meta.unit?.toLowerCase();
                     const pkgCell = newDriverPkgRow[i];
                     const pkgCount = typeof pkgCell === 'object' && pkgCell !== null ? pkgCell.count : (Number(pkgCell) || 0);
-
-                    if (['kg', 'кг'].includes(unit)) {
-                        rowTotal += qty;
-                    } else if (['g', 'г'].includes(unit)) {
-                        rowTotal += qty / 1000;
-                    } else if (meta.netWeight > 0) {
-                        rowTotal += qty * meta.netWeight;
-                    } else if (pkgCount > 0) {
-                        rowTotal += pkgCount;
-                    }
+                    rowTotal += getCellWeightKg(meta, qty, pkgCount);
                 }
             }
             newDriverRow[1] = rowTotal;
@@ -1333,6 +1334,11 @@ export default function ReportDetailPage() {
         return undefined;
     };
 
+    const reportData = report?.data ?? null;
+    const weightFooter = useMemo(() => (
+        reportData ? buildWeightFooter(reportData) : []
+    ), [reportData]);
+
     if (isLoading) {
         return (
             <div className="flex h-screen items-center justify-center">
@@ -1351,8 +1357,6 @@ export default function ReportDetailPage() {
             </div>
         );
     }
-
-    const reportData = report.data;
 
     return (
         <div className="space-y-6">
@@ -1450,17 +1454,24 @@ export default function ReportDetailPage() {
                                                         <span>Unit:</span>
                                                         <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{meta.unit}</span>
 
-                                                        {meta.netWeight > 0 && (
+                                                        {Number(meta.weightPerUnitKg || 0) > 0 && (
                                                             <>
-                                                                <span>Weight (kg):</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{meta.netWeight}</span>
+                                                                <span>Weight / unit:</span>
+                                                                <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{meta.weightPerUnitKg} kg</span>
                                                             </>
                                                         )}
 
-                                                        {meta.unitPerCardboard > 0 && (
+                                                        {getWeightPerPackageKg(meta) > 0 && (
+                                                            <>
+                                                                <span>Weight / package:</span>
+                                                                <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{getWeightPerPackageKg(meta)} kg</span>
+                                                            </>
+                                                        )}
+
+                                                        {getUnitsPerPackage(meta) > 0 && (
                                                             <>
                                                                 <span>In package:</span>
-                                                                <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{meta.unitPerCardboard} {meta.unit}</span>
+                                                                <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{getUnitsPerPackage(meta)} {meta.unit}</span>
                                                             </>
                                                         )}
 
@@ -1510,6 +1521,7 @@ export default function ReportDetailPage() {
                                             const width = getColumnWidth(colIdx);
                                             const left = getStickyLeft(colIdx);
                                             const meta = reportData.headerMetadata?.[colIdx];
+                                            const displayCell = colIdx === 1 ? getRowWeightKg(reportData, rowIdx) : cell;
 
                                             return (
                                                 <td key={colIdx}
@@ -1589,9 +1601,9 @@ export default function ReportDetailPage() {
                                                             })()}
                                                         </div>
                                                     ) : (
-                                                        <div className={cn("p-2 truncate flex flex-col tabular-nums", header === 'Вага' && "items-center")} title={typeof cell === 'string' || typeof cell === 'number' ? String(cell) : ''}>
+                                                        <div className={cn("p-2 truncate flex flex-col tabular-nums", header === 'Вага' && "items-center")} title={typeof displayCell === 'string' || typeof displayCell === 'number' ? String(displayCell) : ''}>
                                                             <span className={cn(header === 'Вага' && "font-bold", colIdx === 0 && "font-semibold")}>
-                                                                {formatCell(cell, colIdx)}
+                                                                {formatCell(displayCell, colIdx)}
                                                             </span>
                                                             {colIdx === 0 && reportData.clientEmails?.[rowIdx] && (
                                                                 <span className="text-[10px] text-zinc-400 font-normal mt-0.5">
@@ -1674,7 +1686,7 @@ export default function ReportDetailPage() {
                         <tbody className="bg-zinc-100 dark:bg-zinc-800 font-bold border-t-2 border-zinc-200 dark:border-zinc-700">
                             {/* Row 1: Value Totals */}
                             <tr>
-                                {reportData.footer.map((cell: any, idx: number) => {
+                                {weightFooter.map((cell: any, idx: number) => {
                                     const width = getColumnWidth(idx);
                                     const left = getStickyLeft(idx);
 
@@ -1698,41 +1710,17 @@ export default function ReportDetailPage() {
                                                 ) : (
                                                     <div className={cn("flex items-baseline gap-1", idx === 1 && "justify-center")}>
                                                         {(() => {
-                                                            const meta = reportData.headerMetadata?.[idx];
-                                                            const unit = String(meta?.unit || '').trim().toLowerCase();
-                                                            const isWeight = ['kg', 'кг', 'g', 'г'].includes(unit);
-
-                                                            // If weight column, show the normal sum (cell value)
-                                                            if (idx === 1 || isWeight) {
-                                                                if (Number(cell) === 0) return null;
-
-                                                                const val = Number(cell);
-                                                                const displayVal = ['g', 'г'].includes(unit) ? val / 1000 : val;
-
-                                                                return (
-                                                                    <>
-                                                                        <span>{displayVal.toFixed(0)} kg</span>
-                                                                    </>
-                                                                );
+                                                            const val = Number(cell) || 0;
+                                                            if (val === 0) {
+                                                                return null;
                                                             }
 
-                                                            // If non-weight (e.g. stz), check package count to derive weight (1 pkg = 1 kg)
-                                                            // We do NOT show the 'stz' sum here anymore.
-                                                            const pkgData = reportData.packageCountFooter?.[idx];
-                                                            const pkgCount = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
-                                                            const pkgType = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : (meta?.unit || '');
-
-                                                            if (pkgCount > 0) {
-                                                                return (
-                                                                    <>
-                                                                        <span>
-                                                                            {Number.isInteger(pkgCount) ? pkgCount.toFixed(0) : pkgCount.toFixed(1)} kg
-                                                                        </span>
-                                                                    </>
-                                                                );
-                                                            }
-
-                                                            return null;
+                                                            const formatted = Number.isInteger(val) ? val.toFixed(0) : val.toFixed(1);
+                                                            return (
+                                                                <>
+                                                                    <span>{formatted} kg</span>
+                                                                </>
+                                                            );
                                                         })()}
                                                     </div>
                                                 )}
@@ -1745,7 +1733,7 @@ export default function ReportDetailPage() {
 
                             {/* Row 2: Package Counts */}
                             <tr className="border-t border-zinc-200 dark:border-zinc-700">
-                                {reportData.footer.map((_: any, idx: number) => {
+                                {weightFooter.map((_: any, idx: number) => {
                                     const width = getColumnWidth(idx);
                                     const left = getStickyLeft(idx);
 
@@ -1913,12 +1901,8 @@ export default function ReportDetailPage() {
                                                                         } else if (['g', 'г'].includes(unit)) {
                                                                             displayValue = qty / 1000;
                                                                             displayUnit = 'kg';
-                                                                        } else if (meta.netWeight > 0) {
-                                                                            // High preference for explicit weight even if not in kg/g units
-                                                                            displayValue = qty * meta.netWeight;
-                                                                            displayUnit = 'kg';
                                                                         } else {
-                                                                            // Non-weight items: Show package count
+                                                                            // Non-weight items: Show package count, mirroring the main table.
                                                                             if (pkgCount > 0 || qty === 0) {
                                                                                 displayValue = pkgCount;
                                                                                 displayUnit = type;
@@ -2000,19 +1984,25 @@ export default function ReportDetailPage() {
                                 </>
                             )}
 
-                            {hoveredHeader.meta.netWeight > 0 && (
+                            {Number(hoveredHeader.meta.weightPerUnitKg || 0) > 0 && (
                                 <>
-                                    <span>In package:</span>
-                                    <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{hoveredHeader.meta.netWeight} kg</span>
+                                    <span>Weight / unit:</span>
+                                    <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{hoveredHeader.meta.weightPerUnitKg} kg</span>
                                 </>
                             )}
 
-                            {/* Show unitPerCardboard if unit is not kg/g */}
-                            {hoveredHeader.meta.unit && !['kg', 'кг', 'g', 'г'].includes(hoveredHeader.meta.unit.toLowerCase()) && hoveredHeader.meta.unitPerCardboard > 0 && (
+                            {getWeightPerPackageKg(hoveredHeader.meta) > 0 && (
+                                <>
+                                    <span>Weight / package:</span>
+                                    <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">{getWeightPerPackageKg(hoveredHeader.meta)} kg</span>
+                                </>
+                            )}
+
+                            {hoveredHeader.meta.unit && !['kg', 'кг', 'g', 'г'].includes(hoveredHeader.meta.unit.toLowerCase()) && getUnitsPerPackage(hoveredHeader.meta) > 0 && (
                                 <>
                                     <span>In package:</span>
                                     <span className="text-zinc-900 dark:text-zinc-200 font-medium text-right">
-                                        {hoveredHeader.meta.unitPerCardboard} {hoveredHeader.meta.unit}
+                                        {getUnitsPerPackage(hoveredHeader.meta)} {hoveredHeader.meta.unit}
                                     </span>
                                 </>
                             )}

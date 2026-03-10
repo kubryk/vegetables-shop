@@ -1,3 +1,5 @@
+import type { WeightMode, WeightSource } from '@/types/weight';
+
 export type CartItem = {
   productId: string;
   name: string;
@@ -7,6 +9,13 @@ export type CartItem = {
   currency: string;
   image: string;
   unit: string;
+  unitsPerPackage?: number;
+  weightMode?: WeightMode;
+  weightPerUnitKg?: number;
+  weightPerPackageKg?: number;
+  calculatedWeightKg?: number;
+  manualWeightKg?: number;
+  weightSource?: WeightSource;
   netWeight: number;
   unitPerCardboard: number;
   additionalInfo?: string;

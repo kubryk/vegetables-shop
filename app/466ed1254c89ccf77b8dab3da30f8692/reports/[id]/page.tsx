@@ -457,7 +457,8 @@ export default function ReportDetailPage() {
             }
             if (!pkgType || pkgType === 'kart') {
                 const u = String(meta?.unit || '').trim().toLowerCase();
-                pkgType = (u !== 'шт' && u !== 'szt') ? (meta?.unit || 'kart') : 'kart';
+                const isWeightUnit = ['kg', 'кг', 'g', 'г'].includes(u);
+                pkgType = (!isWeightUnit && u !== 'шт' && u !== 'szt') ? (meta?.unit || 'kart') : 'kart';
             }
             const displayUnit = pkgType;
 
@@ -466,7 +467,10 @@ export default function ReportDetailPage() {
                 const pkgData = reportData.packageCountRows?.[orderIdx]?.[colIdx];
                 const pkgCount = typeof pkgData === 'object' && pkgData !== null
                     ? pkgData.count : (Number(pkgData) || 0);
-                return `${pkgCount.toFixed(0)} ${displayUnit}`;
+                const storeUnit = (typeof pkgData === 'object' && pkgData !== null && pkgData.packageType && pkgData.packageType !== 'kart')
+                    ? pkgData.packageType
+                    : displayUnit;
+                return `${pkgCount.toFixed(0)} ${storeUnit}`;
             });
 
             // Total from driverRows — always show package count

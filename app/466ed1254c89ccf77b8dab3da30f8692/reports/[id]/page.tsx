@@ -474,7 +474,7 @@ export default function ReportDetailPage() {
             });
 
             // Total from driverRows — always show package count
-            const totalDisplay = `${pkgCountDriver.toFixed(0)} ${displayUnit}`;
+            const totalDisplay = pkgCountDriver > 0 ? `${pkgCountDriver.toFixed(0)} ${displayUnit}` : '';
 
             lines.push([cleanHeader, ...storeCells, totalDisplay].join('\t'));
         }

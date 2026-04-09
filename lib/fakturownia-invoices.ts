@@ -76,13 +76,12 @@ export async function createInvoice(invoiceData: InvoiceData): Promise<CreateInv
 
         const url = `${FAKTUROWNIA_API_URL}/invoices.json`;
 
-        // Filter out positions without product_id
-        const validPositions = invoiceData.positions.filter(pos => pos.product_id);
+        const validPositions = invoiceData.positions.filter(pos => pos.name && pos.quantity > 0);
 
         if (validPositions.length === 0) {
             return {
                 success: false,
-                error: 'Жодної позиції з product_id не знайдено. Переконайтеся, що продукти існують у Fakturownia.'
+                error: 'Жодної позиції не знайдено.'
             };
         }
 
@@ -92,11 +91,18 @@ export async function createInvoice(invoiceData: InvoiceData): Promise<CreateInv
                 kind: 'vat',
                 client_id: String(clientId),
                 additional_info: "1",
-                positions: validPositions.map(pos => ({
-                    product_id: String(pos.product_id),
-                    quantity: pos.quantity,
-                    additional_info: pos.additional_info || ''
-                }))
+                positions: validPositions.map(pos => {
+                    const tax = pos.tax ?? 0;
+                    const total_price_gross = +(pos.price_net * pos.quantity * (1 + tax / 100)).toFixed(2);
+                    return {
+                        name: pos.name,
+                        quantity: pos.quantity,
+                        quantity_unit: pos.unit || undefined,
+                        price_net: pos.price_net,
+                        tax,
+                        total_price_gross,
+                    };
+                })
             }
         };
 
@@ -154,13 +160,12 @@ export async function updateInvoice(invoiceId: number, invoiceData: InvoiceData)
     try {
         const url = `${FAKTUROWNIA_API_URL}/invoices/${invoiceId}.json`;
 
-        // Filter out positions without product_id
-        const validPositions = invoiceData.positions.filter(pos => pos.product_id);
+        const validPositions = invoiceData.positions.filter(pos => pos.name && pos.quantity > 0);
 
         if (validPositions.length === 0) {
             return {
                 success: false,
-                error: 'Жодної позиції з product_id не знайдено.'
+                error: 'Жодної позиції не знайдено.'
             };
         }
 
@@ -168,11 +173,18 @@ export async function updateInvoice(invoiceId: number, invoiceData: InvoiceData)
             api_token: FAKTUROWNIA_API_KEY,
             invoice: {
                 kind: 'vat',
-                positions: JSON.stringify(validPositions.map(pos => ({
-                    product_id: String(pos.product_id),
-                    quantity: pos.quantity,
-                    additional_info: pos.additional_info || ''
-                })))
+                positions: JSON.stringify(validPositions.map(pos => {
+                    const tax = pos.tax ?? 0;
+                    const total_price_gross = +(pos.price_net * pos.quantity * (1 + tax / 100)).toFixed(2);
+                    return {
+                        name: pos.name,
+                        quantity: pos.quantity,
+                        quantity_unit: pos.unit || undefined,
+                        price_net: pos.price_net,
+                        tax,
+                        total_price_gross,
+                    };
+                }))
             }
         };
 

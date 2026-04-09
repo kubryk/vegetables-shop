@@ -201,21 +201,21 @@ export async function createInvoiceForReportRow(reportId: string, rowIndex: numb
                 const pkgCountValue = typeof pkgData === 'object' && pkgData !== null ? pkgData.count : (Number(pkgData) || 0);
                 const pkgType = typeof pkgData === 'object' && pkgData !== null ? pkgData.packageType : 'kart';
 
-                let finalAdditionalInfo = additionalInfo;
-
-                if (pkgCountValue > 0) {
-                    const formattedCount = Number.isInteger(pkgCountValue) ? pkgCountValue : pkgCountValue.toFixed(1);
-                    finalAdditionalInfo = `${formattedCount} ${pkgType}`;
-                }
+                // Use packaging count as invoice quantity; recalculate price per package
+                const invoiceQuantity = pkgCountValue > 0 ? pkgCountValue : quantity;
+                const invoiceUnit = pkgCountValue > 0 ? pkgType : fakturowniaUnit;
+                const invoicePriceNet = pkgCountValue > 0
+                    ? pricePerUnit * quantity / pkgCountValue
+                    : pricePerUnit;
 
                 positions.push({
                     name: productName,
-                    quantity: quantity,
-                    unit: fakturowniaUnit,
-                    price_net: pricePerUnit,
-                    tax: 0, // Adjust if needed
+                    quantity: invoiceQuantity,
+                    unit: invoiceUnit,
+                    price_net: invoicePriceNet,
+                    tax: 0,
                     product_id: productId,
-                    additional_info: String(finalAdditionalInfo || '').trim()
+                    additional_info: ''
                 });
             }
         }

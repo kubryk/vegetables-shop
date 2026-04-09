@@ -470,7 +470,7 @@ export default function ReportDetailPage() {
                 const storeUnit = (typeof pkgData === 'object' && pkgData !== null && pkgData.packageType && pkgData.packageType !== 'kart')
                     ? pkgData.packageType
                     : displayUnit;
-                return `${pkgCount.toFixed(0)} ${storeUnit}`;
+                return pkgCount > 0 ? `${pkgCount.toFixed(0)} ${storeUnit}` : '';
             });
 
             // Total from driverRows — always show package count

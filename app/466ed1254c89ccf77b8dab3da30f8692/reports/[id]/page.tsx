@@ -11,7 +11,8 @@ import {
     Plus,
     FileCheck,
     Truck,
-    Info
+    Info,
+    Table
 } from "lucide-react";
 import {
     Select,
@@ -408,6 +409,84 @@ export default function ReportDetailPage() {
 
         navigator.clipboard.writeText(text).then(() => {
             toast.success('Скопійовано!');
+        }).catch(() => {
+            toast.error('Помилка копіювання');
+        });
+    };
+
+    const getDriverTableText = (driverIdx: number): string | null => {
+        const row = driverRows[driverIdx];
+        if (!row) return null;
+
+        const driverName = String(row[0] || '').trim() || `Driver ${driverIdx + 1}`;
+
+        // Find all orders assigned to this driver
+        const assignedOrderIdxs: number[] = Object.entries(driverAssignments)
+            .filter(([_, dIdx]) => dIdx === driverIdx)
+            .map(([orderIdxStr]) => parseInt(orderIdxStr))
+            .sort((a, b) => a - b);
+
+        if (assignedOrderIdxs.length === 0) return null;
+
+        // Store names
+        const storeNames = assignedOrderIdxs.map(
+            (orderIdx) => String(reportData.rows[orderIdx]?.[0] || `Замовлення ${orderIdx}`)
+        );
+
+        const lines: string[] = [];
+        lines.push(driverName);
+        lines.push(['Product', ...storeNames, 'Total'].join('\t'));
+
+        // Product rows (columns 2+)
+        for (let colIdx = 2; colIdx < row.length; colIdx++) {
+            const header = reportData.headers[colIdx];
+            if (!header) continue;
+            const cleanHeader = String(header).split(' [ID:')[0];
+            const meta = reportData.headerMetadata?.[colIdx];
+            const rawUnit = String(meta?.unit || '').trim().toLowerCase();
+            const isWeight = ['kg', 'кг', 'g', 'г'].includes(rawUnit);
+
+            // Derive package type (same logic as cell renderer)
+            const pkgDataDriver = driverPackageCountRows?.[driverIdx]?.[colIdx];
+            const pkgCountDriver = typeof pkgDataDriver === 'object' && pkgDataDriver !== null
+                ? pkgDataDriver.count : (Number(pkgDataDriver) || 0);
+            let pkgType = typeof pkgDataDriver === 'object' && pkgDataDriver !== null
+                ? (pkgDataDriver.packageType || 'kart') : 'kart';
+            if (!pkgType || pkgType === 'kart') {
+                pkgType = extractPackageType(meta?.name + " " + (meta?.additionalInfo || "")) || pkgType;
+            }
+            if (!pkgType || pkgType === 'kart') {
+                const u = String(meta?.unit || '').trim().toLowerCase();
+                pkgType = (u !== 'шт' && u !== 'szt') ? (meta?.unit || 'kart') : 'kart';
+            }
+            const displayUnit = pkgType;
+
+            // Value per store — always show package count
+            const storeCells = assignedOrderIdxs.map((orderIdx) => {
+                const pkgData = reportData.packageCountRows?.[orderIdx]?.[colIdx];
+                const pkgCount = typeof pkgData === 'object' && pkgData !== null
+                    ? pkgData.count : (Number(pkgData) || 0);
+                return `${pkgCount.toFixed(0)} ${displayUnit}`;
+            });
+
+            // Total from driverRows — always show package count
+            const totalDisplay = `${pkgCountDriver.toFixed(0)} ${displayUnit}`;
+
+            lines.push([cleanHeader, ...storeCells, totalDisplay].join('\t'));
+        }
+
+        if (lines.length <= 2) return null;
+        return lines.join('\n');
+    };
+
+    const handleCopyDriverTable = (rowIdx: number) => {
+        const text = getDriverTableText(rowIdx);
+        if (!text) {
+            toast.error('Немає замовлень для копіювання');
+            return;
+        }
+        navigator.clipboard.writeText(text).then(() => {
+            toast.success('Маршрут скопійовано!');
         }).catch(() => {
             toast.error('Помилка копіювання');
         });
@@ -1844,6 +1923,15 @@ export default function ReportDetailPage() {
                                                         title="Копіювати вертикально"
                                                     >
                                                         <Copy size={12} />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="w-6 h-6 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                                                        onClick={() => handleCopyDriverTable(rowIdx)}
+                                                        title="Копіювати маршрут (таблиця)"
+                                                    >
+                                                        <Table size={12} />
                                                     </Button>
                                                 </div>
                                             </td>

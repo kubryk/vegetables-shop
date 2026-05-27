@@ -1724,6 +1724,15 @@ export default function ReportDetailPage() {
                                                                     {reportData.clientEmails[rowIdx]}
                                                                 </span>
                                                             )}
+                                                            {colIdx === 0 && (() => {
+                                                                const originalItems = reportData.orderMetadata?.[rowIdx]?.originalItems;
+                                                                const hasPriceChange = Array.isArray(originalItems) && originalItems.some((i: any) => i.originalPrice !== undefined);
+                                                                return hasPriceChange ? (
+                                                                    <span className="text-[9px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400 mt-0.5">
+                                                                        ціни змінено
+                                                                    </span>
+                                                                ) : null;
+                                                            })()}
 
                                                         </div>
                                                     )}

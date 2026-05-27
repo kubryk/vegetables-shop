@@ -226,6 +226,7 @@ export default function ReportDetailPage() {
     const [driverRows, setDriverRows] = useState<any[][]>([]);
     const [driverPackageCountRows, setDriverPackageCountRows] = useState<any[][]>([]);
     const [driverAssignments, setDriverAssignments] = useState<{ [rowIdx: number]: number }>({}); // orderRowIdx -> driverRowIdx
+    const [driverAssignmentOrder, setDriverAssignmentOrder] = useState<{ [driverIdx: number]: number[] }>({}); // driverRowIdx -> ordered list of orderRowIdxs
 
     // Column Resizing State
     const [columnWidths, setColumnWidths] = useState<{ [key: number]: number }>({});
@@ -278,6 +279,9 @@ export default function ReportDetailPage() {
             }
             if (reportData?.driverAssignments) {
                 setDriverAssignments(reportData.driverAssignments);
+            }
+            if (reportData?.driverAssignmentOrder) {
+                setDriverAssignmentOrder(reportData.driverAssignmentOrder);
             }
         } else {
             toast.error(res.error || 'Failed to load report');
@@ -420,11 +424,13 @@ export default function ReportDetailPage() {
 
         const driverName = String(row[0] || '').trim() || `Driver ${driverIdx + 1}`;
 
-        // Find all orders assigned to this driver
-        const assignedOrderIdxs: number[] = Object.entries(driverAssignments)
-            .filter(([_, dIdx]) => dIdx === driverIdx)
-            .map(([orderIdxStr]) => parseInt(orderIdxStr))
-            .sort((a, b) => a - b);
+        // Find all orders assigned to this driver, in assignment order
+        const assignedOrderIdxs: number[] = driverAssignmentOrder[driverIdx]?.length
+            ? driverAssignmentOrder[driverIdx]
+            : Object.entries(driverAssignments)
+                .filter(([_, dIdx]) => dIdx === driverIdx)
+                .map(([orderIdxStr]) => parseInt(orderIdxStr))
+                .sort((a, b) => a - b); // fallback для старих даних
 
         if (assignedOrderIdxs.length === 0) return null;
 
@@ -1126,13 +1132,23 @@ export default function ReportDetailPage() {
         const driverIdx = parseInt(driverIdxStr);
         let newAssignments = { ...driverAssignments };
 
+        // Update assignment order: remove orderRowIdx from all drivers first
+        const newAssignmentOrder = { ...driverAssignmentOrder };
+        Object.keys(newAssignmentOrder).forEach(dIdx => {
+            newAssignmentOrder[Number(dIdx)] = newAssignmentOrder[Number(dIdx)].filter(idx => idx !== orderRowIdx);
+        });
+
         if (isNaN(driverIdx) || driverIdx < 0) {
             delete newAssignments[orderRowIdx];
         } else {
             newAssignments[orderRowIdx] = driverIdx;
+            // Append to the end of this driver's order list
+            if (!newAssignmentOrder[driverIdx]) newAssignmentOrder[driverIdx] = [];
+            newAssignmentOrder[driverIdx] = [...newAssignmentOrder[driverIdx], orderRowIdx];
         }
 
         setDriverAssignments(newAssignments);
+        setDriverAssignmentOrder(newAssignmentOrder);
 
         // Recalculate
         const { newDriverRows, newDriverPkgRows } = recalculateDriverRows(driverRows, newAssignments, report.data);
@@ -1144,6 +1160,7 @@ export default function ReportDetailPage() {
         const newData = {
             ...report.data,
             driverAssignments: newAssignments,
+            driverAssignmentOrder: newAssignmentOrder,
             driverRows: newDriverRows,
             driverPackageCountRows: newDriverPkgRows
         };
@@ -1199,12 +1216,25 @@ export default function ReportDetailPage() {
             }
         });
 
+        // Update assignment order: remove this driver's entry, shift others down
+        const newAssignmentOrder: { [driverIdx: number]: number[] } = {};
+        Object.entries(driverAssignmentOrder).forEach(([dIdxStr, orderList]) => {
+            const dIdx = parseInt(dIdxStr);
+            if (dIdx < rowIdx) {
+                newAssignmentOrder[dIdx] = orderList;
+            } else if (dIdx > rowIdx) {
+                newAssignmentOrder[dIdx - 1] = orderList;
+            }
+            // dIdx === rowIdx is dropped
+        });
+
         setDriverAssignments(newAssignments);
+        setDriverAssignmentOrder(newAssignmentOrder);
         setDriverRows(newDriverRows);
         setDriverPackageCountRows(newDriverPkgRows);
 
         // Save to DB
-        saveDriverRowsToDb(newDriverRows, newDriverPkgRows, newAssignments);
+        saveDriverRowsToDb(newDriverRows, newDriverPkgRows, newAssignments, newAssignmentOrder);
         toast.success('Driver removed');
     };
 
@@ -1364,14 +1394,15 @@ export default function ReportDetailPage() {
         return true;
     };
 
-    const saveDriverRowsToDb = async (newDriverRows: any[][], newDriverPkgRows: any[][], newAssignments?: { [rowIdx: number]: number }) => {
+    const saveDriverRowsToDb = async (newDriverRows: any[][], newDriverPkgRows: any[][], newAssignments?: { [rowIdx: number]: number }, newAssignmentOrder?: { [driverIdx: number]: number[] }) => {
         if (!report || !report.data) return;
 
         const newData = {
             ...report.data,
             driverRows: newDriverRows,
             driverPackageCountRows: newDriverPkgRows,
-            driverAssignments: newAssignments || driverAssignments
+            driverAssignments: newAssignments || driverAssignments,
+            driverAssignmentOrder: newAssignmentOrder || driverAssignmentOrder
         };
 
         const res = await updateReportData(id, newData);

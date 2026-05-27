@@ -72,7 +72,7 @@ Skill для взаємодії з Fakturownia API. Дозволяє отрим�
         "size_unit": null,
         "auto_payment_department_id": null,
         "attachments_count": 1,
-        "image_url": "https://s3.eu-west-1.amazonaws.com/fs.firmlet.com/invoiceocean/attachments/attachments/262461164/thumb/%D0%97%D0%BD%D1%96%D0%BC%D0%BE%D0%BA_%D0%B5%D0%BA%D1%80%D0%B0%D0%BD%D0%B0_2026-02-05_%D0%BE_23.32.27.png?1770911549",
+        "image_url": "",
         "tax2": "0",
         "purchase_tax2": "0",
         "supplier_code": "",

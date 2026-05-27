@@ -1703,13 +1703,26 @@ export default function ReportDetailPage() {
                                                                     }
                                                                 }
 
+                                                                const originalItem = colIdx >= 2 && meta?.id
+                                                                    ? (reportData.orderMetadata?.[rowIdx]?.originalItems as any[])?.find(
+                                                                        (i: any) => String(i.productId) === String(meta.id)
+                                                                    )
+                                                                    : null;
+                                                                const hasPriceChange = originalItem?.originalPrice !== undefined;
+
                                                                 return (
-                                                                    <div className={cn("flex items-center", colIdx === 1 && "justify-center")}>
+                                                                    <div className={cn("flex items-center relative", colIdx === 1 && "justify-center")}>
                                                                         <EditableCell
                                                                             value={typeof displayValue === 'number' ? displayValue.toFixed(0) : displayValue}
                                                                             onUpdate={(newVal) => handleCellUpdate(rowIdx, colIdx, newVal)}
                                                                             unit={displayUnit}
                                                                         />
+                                                                        {hasPriceChange && (
+                                                                            <span
+                                                                                className="absolute top-0 right-0 w-1.5 h-1.5 rounded-full bg-amber-400 dark:bg-amber-500"
+                                                                                title={`Ціну змінено: було ${originalItem.originalPrice} → стало ${originalItem.price}`}
+                                                                            />
+                                                                        )}
                                                                     </div>
                                                                 );
                                                             })()}
@@ -1724,15 +1737,6 @@ export default function ReportDetailPage() {
                                                                     {reportData.clientEmails[rowIdx]}
                                                                 </span>
                                                             )}
-                                                            {colIdx === 0 && (() => {
-                                                                const originalItems = reportData.orderMetadata?.[rowIdx]?.originalItems;
-                                                                const hasPriceChange = Array.isArray(originalItems) && originalItems.some((i: any) => i.originalPrice !== undefined);
-                                                                return hasPriceChange ? (
-                                                                    <span className="text-[9px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400 mt-0.5">
-                                                                        ціни змінено
-                                                                    </span>
-                                                                ) : null;
-                                                            })()}
 
                                                         </div>
                                                     )}

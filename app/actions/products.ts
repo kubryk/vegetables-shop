@@ -1230,6 +1230,10 @@ export async function updateOrderItemPrice(orderId: string, productId: string, n
         const idx = items.findIndex((i: any) => String(i.productId) === String(productId));
         if (idx === -1) return { success: false, error: 'Item not found' };
 
+        // Зберігаємо оригінальну ціну тільки при першій зміні
+        if (items[idx].originalPrice === undefined) {
+            items[idx].originalPrice = items[idx].price;
+        }
         items[idx].price = newPrice;
         items[idx].totalPrice = +(newPrice * (Number(items[idx].quantity) || 0)).toFixed(2);
 

@@ -259,6 +259,11 @@ export default function OrdersPage() {
                                                                 <Badge variant="outline" className="w-fit text-[9px] bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 dark:text-zinc-100">
                                                                     {items.length} {items.length === 1 ? 'позиція' : 'позицій'}
                                                                 </Badge>
+                                                                {items.some((i: any) => i.originalPrice !== undefined) && (
+                                                                    <Badge variant="outline" className="w-fit text-[9px] bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400">
+                                                                        ціни змінено
+                                                                    </Badge>
+                                                                )}
                                                             </div>
                                                         </td>
                                                         <td className="px-4 sm:px-6 py-4">
@@ -382,8 +387,13 @@ export default function OrdersPage() {
                                                     </div>
 
                                                     <div className="flex items-center justify-between pt-2 border-t border-zinc-50 dark:border-zinc-800">
-                                                        <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                                                            {items.length} {items.length === 1 ? 'позиція' : 'позицій'}
+                                                        <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                                                            <span>{items.length} {items.length === 1 ? 'позиція' : 'позицій'}</span>
+                                                            {items.some((i: any) => i.originalPrice !== undefined) && (
+                                                                <Badge variant="outline" className="text-[9px] bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400">
+                                                                    ціни змінено
+                                                                </Badge>
+                                                            )}
                                                         </div>
                                                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                                                             <Select
@@ -661,8 +671,11 @@ function OrderDetails({ order, items: initialItems, products, isMobile, onTotalP
                             {initialItems.map((item: any, idx: number) => {
                                 const unit = item.unit || 'kg';
                                 const quantity = Number(item.quantity) || 0;
-                                const originalPrice = Number(item.price || item.pricePerUnit || 0);
-                                const currentPrice = prices[String(item.productId)] ?? originalPrice;
+                                // originalPrice — ціна до будь-яких змін (збережена в item.originalPrice при першій зміні)
+                                const originalPrice = item.originalPrice !== undefined
+                                    ? Number(item.originalPrice)
+                                    : Number(item.price || item.pricePerUnit || 0);
+                                const currentPrice = prices[String(item.productId)] ?? Number(item.price || item.pricePerUnit || 0);
                                 const totalPrice = +(currentPrice * quantity).toFixed(2);
                                 const packagesCount = getPackageCount(item);
 
@@ -716,8 +729,10 @@ function OrderDetails({ order, items: initialItems, products, isMobile, onTotalP
                     {initialItems.map((item: any, idx: number) => {
                         const unit = item.unit || 'kg';
                         const quantity = Number(item.quantity) || 0;
-                        const originalPrice = Number(item.price || item.pricePerUnit || 0);
-                        const currentPrice = prices[String(item.productId)] ?? originalPrice;
+                        const originalPrice = item.originalPrice !== undefined
+                            ? Number(item.originalPrice)
+                            : Number(item.price || item.pricePerUnit || 0);
+                        const currentPrice = prices[String(item.productId)] ?? Number(item.price || item.pricePerUnit || 0);
                         const totalPrice = +(currentPrice * quantity).toFixed(2);
                         const packagesCount = getPackageCount(item);
 

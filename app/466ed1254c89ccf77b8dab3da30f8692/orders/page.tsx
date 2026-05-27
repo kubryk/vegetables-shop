@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 
-import { getPaginatedOrders, getProducts, updateOrderStatus, deleteOrder, getOrderStats, exportAggregationToSheets } from '@/app/actions/products';
+import { getPaginatedOrders, getProducts, updateOrderStatus, deleteOrder, getOrderStats, exportAggregationToSheets, updateOrderItemPrice } from '@/app/actions/products';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -501,7 +501,97 @@ export default function OrdersPage() {
     );
 }
 
-function OrderDetails({ order, items, products, isMobile }: { order: any, items: any[], products: any[], isMobile?: boolean }) {
+function PriceCell({ value, originalValue, unit, currency, isSaving, onSave }: {
+    value: number;
+    originalValue: number;
+    unit: string;
+    currency: string;
+    isSaving: boolean;
+    onSave: (val: number) => void;
+}) {
+    const [isEditing, setIsEditing] = useState(false);
+    const [inputVal, setInputVal] = useState('');
+    const isModified = value !== originalValue;
+
+    const handleEdit = () => {
+        setInputVal(String(value));
+        setIsEditing(true);
+    };
+
+    const handleSave = () => {
+        const parsed = parseFloat(inputVal.replace(',', '.'));
+        if (!isNaN(parsed) && parsed >= 0 && parsed !== value) {
+            onSave(parsed);
+        }
+        setIsEditing(false);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') handleSave();
+        if (e.key === 'Escape') setIsEditing(false);
+    };
+
+    if (isSaving) {
+        return (
+            <div className="flex items-center justify-end gap-1 font-mono text-zinc-400">
+                <Loader2 size={10} className="animate-spin" />
+                <span>{new Intl.NumberFormat('de-DE', { style: 'currency', currency }).format(value)}/{unit}</span>
+            </div>
+        );
+    }
+
+    if (isEditing) {
+        return (
+            <input
+                autoFocus
+                className="w-24 text-right font-mono text-xs border border-amber-400 rounded px-1 py-0.5 bg-amber-50 dark:bg-amber-900/20 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                value={inputVal}
+                onChange={(e) => setInputVal(e.target.value)}
+                onBlur={handleSave}
+                onKeyDown={handleKeyDown}
+            />
+        );
+    }
+
+    return (
+        <button
+            onClick={handleEdit}
+            title="Клікніть щоб змінити ціну"
+            className={cn(
+                "font-mono hover:underline decoration-dotted cursor-pointer transition-colors",
+                isModified
+                    ? "text-amber-600 dark:text-amber-400 font-semibold"
+                    : "text-zinc-500 dark:text-zinc-400"
+            )}
+        >
+            {new Intl.NumberFormat('de-DE', { style: 'currency', currency }).format(value)}/{unit}
+        </button>
+    );
+}
+
+function OrderDetails({ order, items: initialItems, products, isMobile }: { order: any, items: any[], products: any[], isMobile?: boolean }) {
+    const [prices, setPrices] = useState<Record<string, number>>(() =>
+        Object.fromEntries(initialItems.map((item: any) => [
+            String(item.productId),
+            Number(item.price || item.pricePerUnit || 0)
+        ]))
+    );
+    const [savingPrice, setSavingPrice] = useState<string | null>(null);
+
+    const handlePriceChange = async (productId: string, newPrice: number) => {
+        const prevPrice = prices[productId];
+        setSavingPrice(productId);
+        setPrices(prev => ({ ...prev, [productId]: newPrice }));
+        const res = await updateOrderItemPrice(order.id, productId, newPrice);
+        if (!res.success) {
+            setPrices(prev => ({ ...prev, [productId]: prevPrice }));
+            toast.error('Не вдалося зберегти ціну');
+        } else {
+            toast.success('Ціну оновлено');
+        }
+        setSavingPrice(null);
+    };
+
     return (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div className="space-y-4">
@@ -534,7 +624,7 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                         <span className="font-sans">Замовлення від {new Date(order.orderDate).toLocaleString('uk-UA', { timeZone: 'UTC' })}</span>
                     </div>
                     {(() => {
-                        const totalPackages = items.reduce((sum: number, item: any) => {
+                        const totalPackages = initialItems.reduce((sum: number, item: any) => {
                             return sum + (getPackageCount(item) || 0);
                         }, 0);
                         return (
@@ -561,12 +651,12 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
-                            {items.map((item: any, idx: number) => {
+                            {initialItems.map((item: any, idx: number) => {
                                 const unit = item.unit || 'kg';
                                 const quantity = Number(item.quantity) || 0;
-                                const pricePerUnit = Number(item.price || item.pricePerUnit || 0); // fallback to pricePerUnit for old orders
-                                const totalPrice = Number(item.totalPrice || (pricePerUnit * quantity));
-
+                                const originalPrice = Number(item.price || item.pricePerUnit || 0);
+                                const currentPrice = prices[String(item.productId)] ?? originalPrice;
+                                const totalPrice = +(currentPrice * quantity).toFixed(2);
                                 const packagesCount = getPackageCount(item);
 
                                 return (
@@ -594,8 +684,15 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                                                 </Badge>
                                             )}
                                         </td>
-                                        <td className="px-3 py-2 text-right font-mono text-zinc-500 dark:text-zinc-400">
-                                            {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR' }).format(pricePerUnit)}/{unit}
+                                        <td className="px-3 py-2 text-right">
+                                            <PriceCell
+                                                value={currentPrice}
+                                                originalValue={originalPrice}
+                                                unit={unit}
+                                                currency={order.currency || 'EUR'}
+                                                isSaving={savingPrice === String(item.productId)}
+                                                onSave={(val) => handlePriceChange(String(item.productId), val)}
+                                            />
                                         </td>
                                         <td className="px-3 py-2 text-right font-mono font-bold text-primary">
                                             {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR', maximumFractionDigits: 2 }).format(totalPrice)}
@@ -609,12 +706,12 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
 
                 {/* Mobile View Items List */}
                 <div className="md:hidden flex flex-col gap-3">
-                    {items.map((item: any, idx: number) => {
+                    {initialItems.map((item: any, idx: number) => {
                         const unit = item.unit || 'kg';
                         const quantity = Number(item.quantity) || 0;
-                        const pricePerUnit = Number(item.price || item.pricePerUnit || 0);
-                        const totalPrice = Number(item.totalPrice || (pricePerUnit * quantity));
-
+                        const originalPrice = Number(item.price || item.pricePerUnit || 0);
+                        const currentPrice = prices[String(item.productId)] ?? originalPrice;
+                        const totalPrice = +(currentPrice * quantity).toFixed(2);
                         const packagesCount = getPackageCount(item);
 
                         return (
@@ -649,9 +746,14 @@ function OrderDetails({ order, items, products, isMobile }: { order: any, items:
                                             )}
                                         </div>
                                         <div className="text-right">
-                                            <div className="text-[10px] text-zinc-400">
-                                                {new Intl.NumberFormat('de-DE', { style: 'currency', currency: order.currency || 'EUR' }).format(pricePerUnit)}/{unit}
-                                            </div>
+                                            <PriceCell
+                                                value={currentPrice}
+                                                originalValue={originalPrice}
+                                                unit={unit}
+                                                currency={order.currency || 'EUR'}
+                                                isSaving={savingPrice === String(item.productId)}
+                                                onSave={(val) => handlePriceChange(String(item.productId), val)}
+                                            />
                                         </div>
                                     </div>
                                 </div>

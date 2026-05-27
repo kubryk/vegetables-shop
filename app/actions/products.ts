@@ -1219,3 +1219,25 @@ export async function updateOrderCell(orderId: string, field: string, value: any
         return { success: false, error: 'Update failed' };
     }
 }
+
+export async function updateOrderItemPrice(orderId: string, productId: string, newPrice: number) {
+    await verifyAuth();
+    try {
+        const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
+        if (!order) return { success: false, error: 'Order not found' };
+
+        const items = Array.isArray(order.items) ? (order.items as any[]) : [];
+        const idx = items.findIndex((i: any) => String(i.productId) === String(productId));
+        if (idx === -1) return { success: false, error: 'Item not found' };
+
+        items[idx].price = newPrice;
+        items[idx].totalPrice = +(newPrice * (Number(items[idx].quantity) || 0)).toFixed(2);
+
+        await db.update(orders).set({ items }).where(eq(orders.id, orderId));
+        revalidatePath('/466ed1254c89ccf77b8dab3da30f8692/orders');
+        return { success: true };
+    } catch (error) {
+        console.error('Failed to update order item price:', error);
+        return { success: false, error: 'Update failed' };
+    }
+}

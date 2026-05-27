@@ -313,7 +313,9 @@ export default function OrdersPage() {
                                                     {isExpanded && (
                                                         <tr className="bg-zinc-50/50 dark:bg-zinc-800/20 animate-in fade-in slide-in-from-top-2 duration-200">
                                                             <td colSpan={7} className="px-2 sm:px-6 py-4 sm:py-6">
-                                                                <OrderDetails order={order} items={items} products={products} />
+                                                                <OrderDetails order={order} items={items} products={products} onTotalPriceChange={(newTotal) => {
+                                                                    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, totalPrice: newTotal } : o));
+                                                                }} />
                                                             </td>
                                                         </tr>
                                                     )}
@@ -422,7 +424,9 @@ export default function OrdersPage() {
 
                                             {isExpanded && (
                                                 <div className="border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/20 p-4">
-                                                    <OrderDetails order={order} items={items} products={products} isMobile />
+                                                    <OrderDetails order={order} items={items} products={products} isMobile onTotalPriceChange={(newTotal) => {
+                                                        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, totalPrice: newTotal } : o));
+                                                    }} />
                                                 </div>
                                             )}
                                         </div>
@@ -569,7 +573,7 @@ function PriceCell({ value, originalValue, unit, currency, isSaving, onSave }: {
     );
 }
 
-function OrderDetails({ order, items: initialItems, products, isMobile }: { order: any, items: any[], products: any[], isMobile?: boolean }) {
+function OrderDetails({ order, items: initialItems, products, isMobile, onTotalPriceChange }: { order: any, items: any[], products: any[], isMobile?: boolean, onTotalPriceChange?: (newTotal: number) => void }) {
     const [prices, setPrices] = useState<Record<string, number>>(() =>
         Object.fromEntries(initialItems.map((item: any) => [
             String(item.productId),
@@ -588,6 +592,9 @@ function OrderDetails({ order, items: initialItems, products, isMobile }: { orde
             toast.error('Не вдалося зберегти ціну');
         } else {
             toast.success('Ціну оновлено');
+            if (res.newTotalPrice !== undefined) {
+                onTotalPriceChange?.(res.newTotalPrice);
+            }
         }
         setSavingPrice(null);
     };

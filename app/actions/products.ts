@@ -1233,9 +1233,13 @@ export async function updateOrderItemPrice(orderId: string, productId: string, n
         items[idx].price = newPrice;
         items[idx].totalPrice = +(newPrice * (Number(items[idx].quantity) || 0)).toFixed(2);
 
-        await db.update(orders).set({ items }).where(eq(orders.id, orderId));
+        const newTotalPrice = +items.reduce((sum: number, item: any) => {
+            return sum + Number(item.totalPrice != null ? item.totalPrice : (item.price * item.quantity) || 0);
+        }, 0).toFixed(2);
+
+        await db.update(orders).set({ items, totalPrice: newTotalPrice }).where(eq(orders.id, orderId));
         revalidatePath('/466ed1254c89ccf77b8dab3da30f8692/orders');
-        return { success: true };
+        return { success: true, newTotalPrice };
     } catch (error) {
         console.error('Failed to update order item price:', error);
         return { success: false, error: 'Update failed' };
